@@ -97,6 +97,7 @@ function getCanvasPoint(event) {
 }
 
 function onPointerDown(event) {
+  event.preventDefault();
   const point = getCanvasPoint(event);
   const draggableCards = cards.filter((card) => card.zone === 'hand' && !card.animation);
 
@@ -123,6 +124,7 @@ function onPointerMove(event) {
   if (!dragState) {
     return;
   }
+  event.preventDefault();
 
   const card = cards.find((item) => item.id === dragState.cardId);
   if (!card || !card.isDragging) {
@@ -138,6 +140,7 @@ function onPointerUp(event) {
   if (!dragState) {
     return;
   }
+  event.preventDefault();
 
   const card = cards.find((item) => item.id === dragState.cardId);
   if (!card) {
@@ -146,8 +149,7 @@ function onPointerUp(event) {
   }
 
   card.isDragging = false;
-  const point = getCanvasPoint(event);
-  const targetSlot = slotCenters.find((slot) => pointInSlot(point.x, point.y, slot) && slot.occupiedByCardId === null);
+  const targetSlot = slotCenters.find((slot) => pointInSlot(card.x, card.y, slot) && slot.occupiedByCardId === null);
 
   if (targetSlot) {
     startAnimation(card, targetSlot.x, targetSlot.y, () => {
