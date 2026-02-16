@@ -1,17 +1,29 @@
+// ========================================
+// Canvas Card Game MVP (Stage: Swipe Combat)
+// ========================================
+// 目的:
+// - 手札カードのドラッグ&ドロップ
+// - 場カードの左右スワイプ攻撃
+// - 1カード1回行動、解決中の全体入力ロック
+
+// ===== 定数 =====
 const CANVAS_WIDTH = 960;
 const CANVAS_HEIGHT = 720;
 const CARD_WIDTH = 110;
 const CARD_HEIGHT = Math.round(CARD_WIDTH * 1.45);
+
 const MOVE_ANIMATION_MS = 150;
 const SWIPE_THRESHOLD = 50;
 const SHAKE_DURATION_MS = 260;
 const HIT_FLASH_MS = 120;
 const DESTROY_ANIMATION_MS = 150;
 
+// ===== DOM =====
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const resetButton = document.getElementById('resetButton');
 
+// ===== レイアウト =====
 const slotCenters = [180, 330, 480, 630, 780].map((x, index) => ({
   id: index,
   x,
@@ -22,12 +34,16 @@ const slotCenters = [180, 330, 480, 630, 780].map((x, index) => ({
 const playerHandCenters = [255, 405, 555, 705].map((x) => ({ x, y: 620 }));
 const enemyHandCenters = [255, 405, 555, 705].map((x) => ({ x, y: 100 }));
 
+// ===== 全体状態 =====
 const gameState = {
   cards: [],
   interactionLock: false,
   activePointer: null,
 };
 
+// ========================================
+// カード生成・初期化
+// ========================================
 function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight }) {
   return {
     id,
@@ -37,11 +53,13 @@ function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, 
     fieldSlotIndex,
     x,
     y,
+    // ルール用の状態
     combat: {
       attackLeft,
       attackRight,
       hasActedThisTurn: false,
     },
+    // 見た目・入力用の状態
     ui: {
       isDragging: false,
       animation: null,
@@ -55,19 +73,8 @@ function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, 
   };
 }
 
-function getCardById(cardId) {
-  return gameState.cards.find((card) => card.id === cardId && !card.ui.pendingRemoval);
-}
-
-function getCardAtSlot(slotIndex) {
-  const slot = slotCenters[slotIndex];
-  if (!slot || slot.occupiedByCardId === null) {
-    return null;
-  }
-  return getCardById(slot.occupiedByCardId);
-}
-
 function buildInitialCards() {
+  // 手札4枚（プレイヤー）
   const playerAttackValues = [
     [2, 5],
     [4, 3],
@@ -75,6 +82,7 @@ function buildInitialCards() {
     [3, 4],
   ];
 
+  // 攻撃挙動を確認しやすいよう、敵を最初から2枚だけ場に配置
   const enemyFieldSetup = [
     { slotIndex: 1, attackLeft: 3, attackRight: 4 },
     { slotIndex: 3, attackLeft: 5, attackRight: 2 },
@@ -109,10 +117,10 @@ function buildInitialCards() {
 
   gameState.cards = [...playerCards, ...enemyCards];
 
+  // スロット占有情報をリセット後、敵配置を反映
   slotCenters.forEach((slot) => {
     slot.occupiedByCardId = null;
   });
-
   enemyCards.forEach((card) => {
     slotCenters[card.fieldSlotIndex].occupiedByCardId = card.id;
   });
@@ -124,6 +132,52 @@ function resetGame() {
   buildInitialCards();
 }
 
+// ========================================
+// 参照ヘルパー
+// ========================================
+function getCardById(cardId) {
+  return gameState.cards.find((card) => card.id === cardId && !card.ui.pendingRemoval) ?? null;
+}
+
+function getCardAtSlot(slotIndex) {
+  const slot = slotCenters[slotIndex];
+  if (!slot || slot.occupiedByCardId === null) {
+    return null;
+  }
+  return getCardById(slot.occupiedByCardId);
+}
+
+function getCanvasPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
+    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
+  };
+}
+
+function pointInCard(px, py, card) {
+  const left = card.x - CARD_WIDTH / 2;
+  const top = card.y - CARD_HEIGHT / 2;
+  return px >= left && px <= left + CARD_WIDTH && py >= top && py <= top + CARD_HEIGHT;
+}
+
+function pointInSlot(px, py, slot) {
+  const left = slot.x - CARD_WIDTH / 2;
+  const top = slot.y - CARD_HEIGHT / 2;
+  return px >= left && px <= left + CARD_WIDTH && py >= top && py <= top + CARD_HEIGHT;
+}
+
+function getTopCardAtPoint(point, predicate) {
+  const candidates = gameState.cards
+    .filter((card) => !card.ui.pendingRemoval && predicate(card))
+    .sort((a, b) => b.id - a.id);
+
+  return candidates.find((card) => pointInCard(point.x, point.y, card)) ?? null;
+}
+
+// ========================================
+// アニメーション・演出
+// ========================================
 function startMoveAnimation(card, toX, toY, onComplete) {
   card.ui.animation = {
     type: 'move',
@@ -142,6 +196,7 @@ function markCardDestroyed(card, nowMs) {
   card.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
   card.ui.pendingRemoval = true;
 
+  // 仕様: 消滅したカードのスロットは即空く
   if (card.fieldSlotIndex !== null) {
     const slot = slotCenters[card.fieldSlotIndex];
     if (slot && slot.occupiedByCardId === card.id) {
@@ -152,63 +207,9 @@ function markCardDestroyed(card, nowMs) {
 }
 
 function triggerUsedCardFeedback(card, nowMs) {
+  // 行動済みカードをスワイプした時の軽い揺れ + 赤い×表示
   card.ui.shakeUntilMs = nowMs + SHAKE_DURATION_MS;
   card.ui.crossUntilMs = nowMs + SHAKE_DURATION_MS;
-}
-
-function resolveSwipeAttack(attacker, direction) {
-  const nowMs = performance.now();
-
-  if (gameState.interactionLock || attacker.zone !== 'field' || attacker.owner !== 'player') {
-    return;
-  }
-
-  if (attacker.combat.hasActedThisTurn) {
-    triggerUsedCardFeedback(attacker, nowMs);
-    return;
-  }
-
-  const targetSlotIndex = direction === 'left' ? attacker.fieldSlotIndex - 1 : attacker.fieldSlotIndex + 1;
-  const defender = getCardAtSlot(targetSlotIndex);
-
-  if (!defender || defender.owner === attacker.owner) {
-    return;
-  }
-
-  gameState.interactionLock = true;
-  attacker.combat.hasActedThisTurn = true;
-
-  const attackerPower = direction === 'left' ? attacker.combat.attackLeft : attacker.combat.attackRight;
-  const defenderPower = direction === 'left' ? defender.combat.attackRight : defender.combat.attackLeft;
-
-  const destroyedCards = [];
-  if (attackerPower > defenderPower) {
-    destroyedCards.push(defender);
-  } else if (attackerPower < defenderPower) {
-    destroyedCards.push(attacker);
-  } else {
-    destroyedCards.push(attacker, defender);
-  }
-
-  attacker.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
-  defender.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
-
-  setTimeout(() => {
-    const removeAt = performance.now();
-    destroyedCards.forEach((card) => {
-      markCardDestroyed(card, removeAt);
-    });
-
-    setTimeout(() => {
-      gameState.cards = gameState.cards.filter((card) => {
-        if (!card.ui.pendingRemoval) {
-          return true;
-        }
-        return performance.now() < card.ui.destroyUntilMs;
-      });
-      gameState.interactionLock = false;
-    }, DESTROY_ANIMATION_MS);
-  }, HIT_FLASH_MS);
 }
 
 function updateAnimations(nowMs) {
@@ -220,6 +221,7 @@ function updateAnimations(nowMs) {
     const { fromX, fromY, toX, toY, startMs, durationMs, onComplete } = card.ui.animation;
     const t = Math.min((nowMs - startMs) / durationMs, 1);
     const eased = 1 - Math.pow(1 - t, 3);
+
     card.x = fromX + (toX - fromX) * eased;
     card.y = fromY + (toY - fromY) * eased;
 
@@ -233,6 +235,7 @@ function updateAnimations(nowMs) {
     }
   });
 
+  // 破壊アニメ完了後にカードをリストから除外
   gameState.cards = gameState.cards.filter((card) => {
     if (!card.ui.pendingRemoval) {
       return true;
@@ -241,34 +244,72 @@ function updateAnimations(nowMs) {
   });
 }
 
-function pointInCard(px, py, card) {
-  const left = card.x - CARD_WIDTH / 2;
-  const top = card.y - CARD_HEIGHT / 2;
-  return px >= left && px <= left + CARD_WIDTH && py >= top && py <= top + CARD_HEIGHT;
+// ========================================
+// 戦闘ロジック
+// ========================================
+function resolveSwipeAttack(attacker, direction) {
+  const nowMs = performance.now();
+
+  // 解決中ロック中は入力無効
+  if (gameState.interactionLock) {
+    return;
+  }
+
+  // プレイヤーの場カードのみ攻撃可能
+  if (attacker.zone !== 'field' || attacker.owner !== 'player' || attacker.fieldSlotIndex === null) {
+    return;
+  }
+
+  // 1カード1回制限
+  if (attacker.combat.hasActedThisTurn) {
+    triggerUsedCardFeedback(attacker, nowMs);
+    return;
+  }
+
+  const targetSlotIndex = direction === 'left' ? attacker.fieldSlotIndex - 1 : attacker.fieldSlotIndex + 1;
+  const defender = getCardAtSlot(targetSlotIndex);
+
+  // 対象なし・同陣営は何も起きない
+  if (!defender || defender.owner === attacker.owner) {
+    return;
+  }
+
+  gameState.interactionLock = true;
+  attacker.combat.hasActedThisTurn = true;
+
+  // 方向別比較: 左なら attacker.left vs defender.right / 右なら attacker.right vs defender.left
+  const attackerPower = direction === 'left' ? attacker.combat.attackLeft : attacker.combat.attackRight;
+  const defenderPower = direction === 'left' ? defender.combat.attackRight : defender.combat.attackLeft;
+
+  const destroyedCards = [];
+  if (attackerPower > defenderPower) {
+    destroyedCards.push(defender);
+  } else if (attackerPower < defenderPower) {
+    destroyedCards.push(attacker);
+  } else {
+    destroyedCards.push(attacker, defender);
+  }
+
+  // ヒット演出
+  attacker.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+  defender.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+
+  // ヒット演出後に破壊処理、その後ロック解除
+  setTimeout(() => {
+    const removeAt = performance.now();
+    destroyedCards.forEach((card) => {
+      markCardDestroyed(card, removeAt);
+    });
+
+    setTimeout(() => {
+      gameState.interactionLock = false;
+    }, DESTROY_ANIMATION_MS);
+  }, HIT_FLASH_MS);
 }
 
-function pointInSlot(px, py, slot) {
-  const left = slot.x - CARD_WIDTH / 2;
-  const top = slot.y - CARD_HEIGHT / 2;
-  return px >= left && px <= left + CARD_WIDTH && py >= top && py <= top + CARD_HEIGHT;
-}
-
-function getCanvasPoint(event) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: ((event.clientX - rect.left) / rect.width) * canvas.width,
-    y: ((event.clientY - rect.top) / rect.height) * canvas.height,
-  };
-}
-
-function getTopCardAtPoint(point, predicate) {
-  const candidates = gameState.cards
-    .filter((card) => !card.ui.pendingRemoval && predicate(card))
-    .sort((a, b) => b.id - a.id);
-
-  return candidates.find((card) => pointInCard(point.x, point.y, card)) ?? null;
-}
-
+// ========================================
+// 入力処理
+// ========================================
 function onPointerDown(event) {
   if (gameState.interactionLock || gameState.activePointer !== null) {
     return;
@@ -277,6 +318,7 @@ function onPointerDown(event) {
   event.preventDefault();
   const point = getCanvasPoint(event);
 
+  // 1) まず手札ドラッグを優先判定
   const handCard = getTopCardAtPoint(point, (card) => card.zone === 'hand' && !card.ui.animation);
   if (handCard) {
     handCard.ui.isDragging = true;
@@ -293,6 +335,7 @@ function onPointerDown(event) {
     return;
   }
 
+  // 2) 次に場カードのスワイプ判定
   const fieldCard = getTopCardAtPoint(
     point,
     (card) => card.zone === 'field' && card.owner === 'player' && !card.ui.pendingRemoval,
@@ -318,8 +361,8 @@ function onPointerMove(event) {
   if (!gameState.activePointer || gameState.activePointer.pointerId !== event.pointerId) {
     return;
   }
-  event.preventDefault();
 
+  event.preventDefault();
   const pointerState = gameState.activePointer;
   const card = getCardById(pointerState.cardId);
   if (!card) {
@@ -342,11 +385,12 @@ function onPointerUp(event) {
   if (!gameState.activePointer || gameState.activePointer.pointerId !== event.pointerId) {
     return;
   }
-  event.preventDefault();
 
+  event.preventDefault();
   const pointerState = gameState.activePointer;
   const card = getCardById(pointerState.cardId);
 
+  // 手札ドラッグ終了
   if (card && pointerState.kind === 'drag') {
     card.ui.isDragging = false;
 
@@ -371,6 +415,7 @@ function onPointerUp(event) {
     }
   }
 
+  // スワイプ終了
   if (card && pointerState.kind === 'swipe') {
     const deltaX = pointerState.currentX - pointerState.startX;
     const deltaY = pointerState.currentY - pointerState.startY;
@@ -391,6 +436,9 @@ function onPointerUp(event) {
   gameState.activePointer = null;
 }
 
+// ========================================
+// 描画
+// ========================================
 function drawTable() {
   ctx.fillStyle = '#1d2f4f';
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -408,6 +456,10 @@ function drawTable() {
   });
   ctx.setLineDash([]);
 
+}
+
+function drawHudLabels() {
+  // ラベルは最前面で描画し、他の要素に埋もれないようにする
   ctx.fillStyle = '#d6e0f4';
   ctx.font = '16px sans-serif';
   ctx.fillText('ENEMY HAND (4)', 20, 40);
@@ -482,7 +534,6 @@ function drawCards(nowMs) {
     ctx.fillStyle = '#ffffff';
     ctx.strokeStyle = ownerStroke;
     ctx.lineWidth = 3;
-
     ctx.fillRect(left, top, width, height);
     ctx.strokeRect(left, top, width, height);
 
@@ -522,6 +573,7 @@ function draw() {
   drawTable();
   drawEnemyHandPlaceholders();
   drawCards(nowMs);
+  drawHudLabels();
 }
 
 function loop(nowMs) {
@@ -530,6 +582,9 @@ function loop(nowMs) {
   requestAnimationFrame(loop);
 }
 
+// ========================================
+// 起動
+// ========================================
 canvas.addEventListener('pointerdown', onPointerDown);
 canvas.addEventListener('pointermove', onPointerMove);
 canvas.addEventListener('pointerup', onPointerUp);
