@@ -36,3 +36,35 @@
 ## 4. Additional agreed points
 - Slot detection rule: center-point based detection is acceptable.
 - Quick return/snap animation target duration: around **120–180ms**.
+
+## 5. Combat System (New Stage)
+1. Card parameters
+   - Each card has directional attack values: `attackValue.left` and `attackValue.right`.
+
+2. Swipe attack on field
+   - Player field cards can perform attacks by horizontal swipe.
+   - Left swipe attacks the adjacent card in the left slot.
+   - Right swipe attacks the adjacent card in the right slot.
+   - Swipe threshold: `|deltaX| >= 50` and `|deltaX| > |deltaY|`.
+
+3. Target and comparison
+   - Only adjacent **enemy** field cards are valid targets.
+   - If no valid adjacent enemy exists, no battle is resolved.
+   - Left swipe compares `attacker.left` vs `defender.right`.
+   - Right swipe compares `attacker.right` vs `defender.left`.
+
+4. Battle result
+   - Higher value survives; lower value is destroyed.
+   - Equal values destroy both cards.
+   - Destroyed card slots are freed immediately.
+
+5. Action limits and lock
+   - One card can attack once (`hasActedThisTurn`).
+   - Swiping an already-acted card shows light shake and a temporary red X mark.
+   - Any card interaction is disabled while an action result/animation is resolving.
+   - One swipe triggers only one resolution.
+
+6. Visual feedback
+   - Player/enemy cards are color-accented.
+   - Hit flash occurs before destruction.
+   - Destroyed cards fade/shrink out quickly.
