@@ -88,7 +88,8 @@
 
 4. Main phase behavior
    - Player turn: can place cards and swipe-attack as before.
-   - Enemy turn (temporary): no AI actions yet; only turn-end declaration is processed.
+   - Enemy turn (prototype AI): chooses actions automatically (attack if favorable; otherwise summon).
+   - Enemy placement preference: aims to keep enemy cards alive and orient higher attack values toward adjacent player cards (edge-oriented heuristic included).
 
 5. End turn conditions
    - Player can end turn manually with the in-canvas circular `END TURN` button (right-center).

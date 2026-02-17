@@ -4,7 +4,7 @@
 // 目的:
 // - 先攻/後攻のランダム決定（コイントス演出）
 // - ドロー -> メイン -> ターン終了の流れ
-// - プレイヤーMainのみ手動操作、敵ターンは終了宣言のみ
+// - プレイヤーMainは手動操作、敵ターンは簡易AIで行動
 
 // ===== 定数 =====
 const CANVAS_WIDTH = 960;
@@ -24,7 +24,9 @@ const MAX_HAND = 9;
 const MAX_FIELD_SLOTS = 5;
 const TURN_BANNER_MS = 900;
 const ENEMY_AUTO_END_MS = 850;
+const ENEMY_ACTION_DELAY_MS = 540;
 const COIN_TOSS_MS = 1200;
+const NO_ACTION_AUTO_END_DELAY_MS = 480;
 
 const END_TURN_UI = {
   x: 900,
@@ -82,6 +84,8 @@ const gameState = {
       resultFirstPlayer: null,
     },
     enemyAutoEndAtMs: 0,
+    enemyNextActionAtMs: 0,
+    mainPhaseStartedAtMs: 0,
   },
 };
 
@@ -247,14 +251,18 @@ function clearActedFlags(owner) {
 }
 
 function beginMainPhase(owner) {
+  const nowMs = performance.now();
   gameState.turn.phase = 'main';
+  gameState.turn.mainPhaseStartedAtMs = nowMs;
   clearActedFlags(owner);
 
   if (owner === 'player') {
     gameState.turn.enemyAutoEndAtMs = 0;
+    gameState.turn.enemyNextActionAtMs = 0;
     showBanner(`PLAYER TURN ${gameState.turn.number}`);
   } else {
-    gameState.turn.enemyAutoEndAtMs = performance.now() + ENEMY_AUTO_END_MS;
+    gameState.turn.enemyAutoEndAtMs = 0;
+    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
     showBanner(`ENEMY TURN ${gameState.turn.number}`);
   }
 
@@ -319,6 +327,8 @@ function resetGame() {
   gameState.turn.bannerText = '';
   gameState.turn.bannerUntilMs = 0;
   gameState.turn.enemyAutoEndAtMs = 0;
+  gameState.turn.enemyNextActionAtMs = 0;
+  gameState.turn.mainPhaseStartedAtMs = 0;
 
   startCoinToss();
 }
@@ -363,16 +373,18 @@ function triggerUsedCardFeedback(card, nowMs) {
 function resolveSwipeAttack(attacker, direction) {
   const nowMs = performance.now();
 
-  if (!isPlayerMainTurn() || gameState.interactionLock) {
+  if (gameState.turn.phase !== 'main' || gameState.interactionLock) {
     return;
   }
 
-  if (attacker.zone !== 'field' || attacker.owner !== 'player' || attacker.fieldSlotIndex === null) {
+  if (attacker.zone !== 'field' || attacker.owner !== gameState.turn.currentPlayer || attacker.fieldSlotIndex === null) {
     return;
   }
 
   if (attacker.combat.hasActedThisTurn) {
-    triggerUsedCardFeedback(attacker, nowMs);
+    if (attacker.owner === 'player') {
+      triggerUsedCardFeedback(attacker, nowMs);
+    }
     return;
   }
 
@@ -412,6 +424,141 @@ function resolveSwipeAttack(attacker, direction) {
       recomputeSlotOccupancy();
         }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
+}
+
+function getEmptySlotIndices() {
+  return slotCenters.filter((slot) => slot.occupiedByCardId === null).map((slot) => slot.id);
+}
+
+function evaluateEnemyPlacement(card, slotIndex) {
+  const left = getCardAtSlot(slotIndex - 1);
+  const right = getCardAtSlot(slotIndex + 1);
+
+  let score = 0;
+
+  // 生存しやすい向きを優先（相手から攻撃された時の耐久余裕）
+  if (left && left.owner === 'player') {
+    score += (card.combat.attackLeft - left.combat.attackRight) * 3;
+    score += card.combat.attackLeft * 0.9;
+  }
+  if (right && right.owner === 'player') {
+    score += (card.combat.attackRight - right.combat.attackLeft) * 3;
+    score += card.combat.attackRight * 0.9;
+  }
+
+  // 端配置の向き補正（右端は左高火力、左端は右高火力を好む）
+  if (slotIndex === 4) {
+    score += (card.combat.attackLeft - card.combat.attackRight) * 1.2;
+  }
+  if (slotIndex === 0) {
+    score += (card.combat.attackRight - card.combat.attackLeft) * 1.2;
+  }
+
+  // 隣接相手がいない場合は中央より端を少し優先
+  if ((!left || left.owner !== 'player') && (!right || right.owner !== 'player')) {
+    score += [1.2, 0.8, 0.5, 0.8, 1.2][slotIndex];
+  }
+
+  return score;
+}
+
+function chooseBestEnemySummon() {
+  const hand = getHandCards('enemy');
+  const emptySlots = getEmptySlotIndices();
+
+  if (hand.length === 0 || emptySlots.length === 0) {
+    return null;
+  }
+
+  let best = null;
+
+  hand.forEach((card) => {
+    emptySlots.forEach((slotIndex) => {
+      const score = evaluateEnemyPlacement(card, slotIndex);
+      if (!best || score > best.score) {
+        best = { card, slotIndex, score };
+      }
+    });
+  });
+
+  return best;
+}
+
+function chooseBestEnemyAttack() {
+  const attackers = getFieldCards('enemy').filter((card) => !card.combat.hasActedThisTurn);
+  let best = null;
+
+  attackers.forEach((attacker) => {
+    if (attacker.fieldSlotIndex === null) {
+      return;
+    }
+
+    ['left', 'right'].forEach((direction) => {
+      const targetSlotIndex = direction === 'left' ? attacker.fieldSlotIndex - 1 : attacker.fieldSlotIndex + 1;
+      const defender = getCardAtSlot(targetSlotIndex);
+
+      if (!defender || defender.owner !== 'player') {
+        return;
+      }
+
+      const attackerPower = direction === 'left' ? attacker.combat.attackLeft : attacker.combat.attackRight;
+      const defenderPower = direction === 'left' ? defender.combat.attackRight : defender.combat.attackLeft;
+
+      let score = 0;
+      if (attackerPower > defenderPower) {
+        score = 50 + (attackerPower - defenderPower) * 4;
+      } else if (attackerPower === defenderPower) {
+        score = 6;
+      } else {
+        score = -40 - (defenderPower - attackerPower) * 4;
+      }
+
+      if (!best || score > best.score) {
+        best = { attacker, direction, score };
+      }
+    });
+  });
+
+  // 不利攻撃は行わない
+  if (best && best.score <= 0) {
+    return null;
+  }
+
+  return best;
+}
+
+function executeEnemyMainAction(nowMs) {
+  if (gameState.turn.currentPlayer !== 'enemy' || gameState.turn.phase !== 'main' || gameState.interactionLock) {
+    return false;
+  }
+
+  const bestAttack = chooseBestEnemyAttack();
+  if (bestAttack) {
+    resolveSwipeAttack(bestAttack.attacker, bestAttack.direction);
+    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+    return true;
+  }
+
+  const summon = chooseBestEnemySummon();
+  if (summon) {
+    const { card, slotIndex } = summon;
+    const targetSlot = slotCenters[slotIndex];
+    gameState.interactionLock = true;
+
+    startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
+      card.zone = 'field';
+      card.handIndex = null;
+      card.fieldSlotIndex = slotIndex;
+      targetSlot.occupiedByCardId = card.id;
+      reflowHand('enemy');
+      gameState.interactionLock = false;
+    });
+
+    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+    return true;
+  }
+
+  return false;
 }
 
 function updateAnimations(nowMs) {
@@ -865,16 +1012,27 @@ function updateTurnFlow(nowMs) {
   }
 
   if (gameState.turn.phase === 'main') {
-    if (
-      gameState.turn.currentPlayer === 'enemy'
-      && !gameState.interactionLock
-      && nowMs >= gameState.turn.enemyAutoEndAtMs
-    ) {
-      endCurrentTurn('enemy_auto');
-      return;
+    if (gameState.turn.currentPlayer === 'enemy' && !gameState.interactionLock) {
+      if (nowMs >= gameState.turn.enemyNextActionAtMs) {
+        const acted = executeEnemyMainAction(nowMs);
+        if (!acted) {
+          gameState.turn.enemyAutoEndAtMs = nowMs + ENEMY_AUTO_END_MS;
+          gameState.turn.enemyNextActionAtMs = Number.POSITIVE_INFINITY;
+        }
+      }
+
+      if (gameState.turn.enemyAutoEndAtMs > 0 && nowMs >= gameState.turn.enemyAutoEndAtMs) {
+        endCurrentTurn('enemy_auto');
+        return;
+      }
     }
 
-    if (gameState.turn.currentPlayer === 'player' && !gameState.interactionLock && !canOwnerAct('player')) {
+    if (
+      gameState.turn.currentPlayer === 'player'
+      && !gameState.interactionLock
+      && nowMs - gameState.turn.mainPhaseStartedAtMs >= NO_ACTION_AUTO_END_DELAY_MS
+      && !canOwnerAct('player')
+    ) {
       endCurrentTurn('no_actions');
     }
   }
