@@ -27,9 +27,9 @@ const ENEMY_AUTO_END_MS = 850;
 const COIN_TOSS_MS = 1200;
 
 const END_TURN_UI = {
-  x: 850,
+  x: 900,
   y: 360,
-  radius: 60,
+  radius: 48,
 };
 
 // ===== DOM =====
@@ -145,6 +145,10 @@ function buildInitialCards() {
     drawRandomCardToHand('player');
     drawRandomCardToHand('enemy');
   }
+
+  // 初期手札の座標を4枚レイアウトへ正規化
+  reflowHand('player');
+  reflowHand('enemy');
 }
 
 function showBanner(text, durationMs = TURN_BANNER_MS) {
@@ -271,7 +275,7 @@ function beginTurn(owner, isNewRound = false) {
 }
 
 function endCurrentTurn(reason = 'manual') {
-  if (gameState.turn.phase !== 'main') {
+  if (gameState.turn.phase !== 'main' || gameState.interactionLock) {
     return;
   }
 
@@ -861,7 +865,11 @@ function updateTurnFlow(nowMs) {
   }
 
   if (gameState.turn.phase === 'main') {
-    if (gameState.turn.currentPlayer === 'enemy' && nowMs >= gameState.turn.enemyAutoEndAtMs) {
+    if (
+      gameState.turn.currentPlayer === 'enemy'
+      && !gameState.interactionLock
+      && nowMs >= gameState.turn.enemyAutoEndAtMs
+    ) {
       endCurrentTurn('enemy_auto');
       return;
     }
