@@ -48,10 +48,14 @@
       button:hover {
         background: #20304a;
       }
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+      }
       .note {
         font-size: 12px;
         color: #b8c2d9;
-        max-width: 150px;
+        max-width: 170px;
       }
     </style>
   </head>
@@ -59,8 +63,9 @@
     <div class="app">
       <canvas id="game" width="960" height="720" aria-label="カードゲーム画面"></canvas>
       <div class="controls">
+        <button id="endTurnButton" type="button">End Turn</button>
         <button id="resetButton" type="button">Reset (Debug)</button>
-        <div class="note">手札を場へ出した後、場カードを左右スワイプで隣接敵を攻撃</div>
+        <div class="note">プレイヤーMainで行動、終了ボタンまたは行動不可時の自動進行でターン移行</div>
       </div>
     </div>
     <script src="./main.js"></script>

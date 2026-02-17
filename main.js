@@ -1,10 +1,10 @@
 // ========================================
-// Canvas Card Game MVP (Stage: Swipe Combat)
+// Canvas Card Game MVP (Stage: Turn Flow)
 // ========================================
 // 目的:
-// - 手札カードのドラッグ&ドロップ
-// - 場カードの左右スワイプ攻撃
-// - 1カード1回行動、解決中の全体入力ロック
+// - 先攻/後攻のランダム決定（コイントス演出）
+// - ドロー -> メイン -> ターン終了の流れ
+// - プレイヤーMainのみ手動操作、敵ターンは終了宣言のみ
 
 // ===== 定数 =====
 const CANVAS_WIDTH = 960;
@@ -18,9 +18,16 @@ const SHAKE_DURATION_MS = 260;
 const HIT_FLASH_MS = 120;
 const DESTROY_ANIMATION_MS = 150;
 
+const MAX_HAND = 4;
+const MAX_FIELD_SLOTS = 5;
+const TURN_BANNER_MS = 900;
+const ENEMY_AUTO_END_MS = 850;
+const COIN_TOSS_MS = 1200;
+
 // ===== DOM =====
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+const endTurnButton = document.getElementById('endTurnButton');
 const resetButton = document.getElementById('resetButton');
 
 // ===== レイアウト =====
@@ -37,13 +44,26 @@ const enemyHandCenters = [255, 405, 555, 705].map((x) => ({ x, y: 100 }));
 // ===== 全体状態 =====
 const gameState = {
   cards: [],
+  nextCardId: 0,
   interactionLock: false,
   activePointer: null,
+  turn: {
+    number: 1,
+    firstPlayer: null,
+    currentPlayer: null,
+    phase: 'coin_toss', // coin_toss | draw | main
+    bannerText: '',
+    bannerUntilMs: 0,
+    coin: {
+      active: false,
+      startMs: 0,
+      durationMs: COIN_TOSS_MS,
+      resultFirstPlayer: null,
+    },
+    enemyAutoEndAtMs: 0,
+  },
 };
 
-// ========================================
-// カード生成・初期化
-// ========================================
 function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight }) {
   return {
     id,
@@ -53,13 +73,11 @@ function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, 
     fieldSlotIndex,
     x,
     y,
-    // ルール用の状態
     combat: {
       attackLeft,
       attackRight,
       hasActedThisTurn: false,
     },
-    // 見た目・入力用の状態
     ui: {
       isDragging: false,
       animation: null,
@@ -73,68 +91,70 @@ function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, 
   };
 }
 
-function buildInitialCards() {
-  // 手札4枚（プレイヤー）
-  const playerAttackValues = [
-    [2, 5],
-    [4, 3],
-    [6, 2],
-    [3, 4],
-  ];
+function randomAttackValue() {
+  return Math.floor(Math.random() * 7) + 1;
+}
 
-  // 攻撃挙動を確認しやすいよう、敵を最初から2枚だけ場に配置
-  const enemyFieldSetup = [
-    { slotIndex: 1, attackLeft: 3, attackRight: 4 },
-    { slotIndex: 3, attackLeft: 5, attackRight: 2 },
-  ];
-
-  const playerCards = playerHandCenters.map((position, index) =>
-    createCard({
-      id: index,
-      owner: 'player',
-      zone: 'hand',
-      handIndex: index,
-      x: position.x,
-      y: position.y,
-      attackLeft: playerAttackValues[index][0],
-      attackRight: playerAttackValues[index][1],
-    }),
-  );
-
-  const enemyCards = enemyFieldSetup.map((enemy, index) => {
-    const slot = slotCenters[enemy.slotIndex];
-    return createCard({
-      id: playerCards.length + index,
-      owner: 'enemy',
-      zone: 'field',
-      fieldSlotIndex: enemy.slotIndex,
-      x: slot.x,
-      y: slot.y,
-      attackLeft: enemy.attackLeft,
-      attackRight: enemy.attackRight,
-    });
+function drawRandomCardToHand(owner) {
+  const handCards = getHandCards(owner);
+  const handIndex = handCards.length;
+  const center = owner === 'player' ? playerHandCenters[handIndex] : enemyHandCenters[handIndex];
+  const card = createCard({
+    id: gameState.nextCardId,
+    owner,
+    zone: 'hand',
+    handIndex,
+    x: center.x,
+    y: center.y,
+    attackLeft: randomAttackValue(),
+    attackRight: randomAttackValue(),
   });
+  gameState.nextCardId += 1;
+  gameState.cards.push(card);
+}
 
-  gameState.cards = [...playerCards, ...enemyCards];
-
-  // スロット占有情報をリセット後、敵配置を反映
+function buildInitialCards() {
+  gameState.cards = [];
+  gameState.nextCardId = 0;
   slotCenters.forEach((slot) => {
     slot.occupiedByCardId = null;
   });
-  enemyCards.forEach((card) => {
-    slotCenters[card.fieldSlotIndex].occupiedByCardId = card.id;
+
+  for (let i = 0; i < MAX_HAND; i += 1) {
+    drawRandomCardToHand('player');
+    drawRandomCardToHand('enemy');
+  }
+}
+
+function showBanner(text, durationMs = TURN_BANNER_MS) {
+  gameState.turn.bannerText = text;
+  gameState.turn.bannerUntilMs = performance.now() + durationMs;
+}
+
+function recomputeSlotOccupancy() {
+  slotCenters.forEach((slot) => {
+    slot.occupiedByCardId = null;
+  });
+  gameState.cards.forEach((card) => {
+    if (card.zone === 'field' && card.fieldSlotIndex !== null && !card.ui.pendingRemoval) {
+      slotCenters[card.fieldSlotIndex].occupiedByCardId = card.id;
+    }
   });
 }
 
-function resetGame() {
-  gameState.interactionLock = false;
-  gameState.activePointer = null;
-  buildInitialCards();
+function reflowHand(owner) {
+  const centers = owner === 'player' ? playerHandCenters : enemyHandCenters;
+  const handCards = gameState.cards
+    .filter((card) => card.owner === owner && card.zone === 'hand' && !card.ui.pendingRemoval)
+    .sort((a, b) => (a.handIndex ?? 0) - (b.handIndex ?? 0));
+
+  handCards.forEach((card, index) => {
+    card.handIndex = index;
+    card.x = centers[index].x;
+    card.y = centers[index].y;
+  });
 }
 
-// ========================================
-// 参照ヘルパー
-// ========================================
 function getCardById(cardId) {
   return gameState.cards.find((card) => card.id === cardId && !card.ui.pendingRemoval) ?? null;
 }
@@ -145,6 +165,260 @@ function getCardAtSlot(slotIndex) {
     return null;
   }
   return getCardById(slot.occupiedByCardId);
+}
+
+function getHandCards(owner) {
+  return gameState.cards.filter((card) => card.owner === owner && card.zone === 'hand' && !card.ui.pendingRemoval);
+}
+
+function getFieldCards(owner) {
+  return gameState.cards.filter((card) => card.owner === owner && card.zone === 'field' && !card.ui.pendingRemoval);
+}
+
+function hasEmptyFieldSlot() {
+  return slotCenters.some((slot) => slot.occupiedByCardId === null);
+}
+
+function hasAdjacentEnemyTarget(card) {
+  if (card.zone !== 'field' || card.fieldSlotIndex === null) {
+    return false;
+  }
+  const left = getCardAtSlot(card.fieldSlotIndex - 1);
+  const right = getCardAtSlot(card.fieldSlotIndex + 1);
+  return (left && left.owner !== card.owner) || (right && right.owner !== card.owner);
+}
+
+function canOwnerAct(owner) {
+  const canSummon = getHandCards(owner).length > 0 && hasEmptyFieldSlot();
+  const canAttack = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && hasAdjacentEnemyTarget(card));
+  return canSummon || canAttack;
+}
+
+function isPlayerMainTurn() {
+  return gameState.turn.phase === 'main' && gameState.turn.currentPlayer === 'player';
+}
+
+function updateEndTurnButton() {
+  const enabled = isPlayerMainTurn() && !gameState.interactionLock;
+  endTurnButton.disabled = !enabled;
+  endTurnButton.textContent = enabled ? 'End Turn' : 'End Turn (Locked)';
+}
+
+function applyDrawPhase(owner) {
+  while (getHandCards(owner).length < MAX_HAND) {
+    drawRandomCardToHand(owner);
+  }
+  reflowHand(owner);
+}
+
+function clearActedFlags(owner) {
+  getFieldCards(owner).forEach((card) => {
+    card.combat.hasActedThisTurn = false;
+  });
+}
+
+function beginMainPhase(owner) {
+  gameState.turn.phase = 'main';
+  clearActedFlags(owner);
+
+  if (owner === 'player') {
+    gameState.turn.enemyAutoEndAtMs = 0;
+    showBanner(`PLAYER TURN ${gameState.turn.number}`);
+  } else {
+    gameState.turn.enemyAutoEndAtMs = performance.now() + ENEMY_AUTO_END_MS;
+    showBanner(`ENEMY TURN ${gameState.turn.number}`);
+  }
+
+  updateEndTurnButton();
+}
+
+function beginTurn(owner, isNewRound = false) {
+  gameState.turn.currentPlayer = owner;
+  gameState.turn.phase = 'draw';
+  gameState.interactionLock = false;
+  gameState.activePointer = null;
+
+  if (isNewRound) {
+    gameState.turn.number += 1;
+  }
+
+  applyDrawPhase(owner);
+  beginMainPhase(owner);
+}
+
+function endCurrentTurn(reason = 'manual') {
+  if (gameState.turn.phase !== 'main') {
+    return;
+  }
+
+  // プレイヤー手動終了、敵自動終了、行動不能自動終了のいずれか
+  if (reason === 'manual' && !isPlayerMainTurn()) {
+    return;
+  }
+
+  gameState.interactionLock = true;
+  updateEndTurnButton();
+
+  const current = gameState.turn.currentPlayer;
+  const next = current === 'player' ? 'enemy' : 'player';
+  const isNewRound = next === gameState.turn.firstPlayer;
+
+  showBanner(`${current.toUpperCase()} END`);
+
+  setTimeout(() => {
+    gameState.interactionLock = false;
+    beginTurn(next, isNewRound);
+  }, 220);
+}
+
+function startCoinToss() {
+  const nowMs = performance.now();
+  gameState.turn.phase = 'coin_toss';
+  gameState.turn.coin.active = true;
+  gameState.turn.coin.startMs = nowMs;
+  gameState.turn.coin.resultFirstPlayer = Math.random() < 0.5 ? 'player' : 'enemy';
+  gameState.interactionLock = true;
+  updateEndTurnButton();
+}
+
+function resetGame() {
+  buildInitialCards();
+  gameState.interactionLock = false;
+  gameState.activePointer = null;
+
+  gameState.turn.number = 1;
+  gameState.turn.firstPlayer = null;
+  gameState.turn.currentPlayer = null;
+  gameState.turn.phase = 'coin_toss';
+  gameState.turn.bannerText = '';
+  gameState.turn.bannerUntilMs = 0;
+  gameState.turn.enemyAutoEndAtMs = 0;
+
+  startCoinToss();
+}
+
+function startMoveAnimation(card, toX, toY, onComplete) {
+  card.ui.animation = {
+    type: 'move',
+    fromX: card.x,
+    fromY: card.y,
+    toX,
+    toY,
+    startMs: performance.now(),
+    durationMs: MOVE_ANIMATION_MS,
+    onComplete,
+  };
+}
+
+function markCardDestroyed(card, nowMs) {
+  card.ui.destroyStartMs = nowMs;
+  card.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
+  card.ui.pendingRemoval = true;
+
+  if (card.fieldSlotIndex !== null) {
+    const slot = slotCenters[card.fieldSlotIndex];
+    if (slot && slot.occupiedByCardId === card.id) {
+      slot.occupiedByCardId = null;
+    }
+  }
+
+  if (card.zone === 'hand') {
+    reflowHand(card.owner);
+  }
+
+  card.fieldSlotIndex = null;
+}
+
+function triggerUsedCardFeedback(card, nowMs) {
+  card.ui.shakeUntilMs = nowMs + SHAKE_DURATION_MS;
+  card.ui.crossUntilMs = nowMs + SHAKE_DURATION_MS;
+}
+
+function resolveSwipeAttack(attacker, direction) {
+  const nowMs = performance.now();
+
+  if (!isPlayerMainTurn() || gameState.interactionLock) {
+    return;
+  }
+
+  if (attacker.zone !== 'field' || attacker.owner !== 'player' || attacker.fieldSlotIndex === null) {
+    return;
+  }
+
+  if (attacker.combat.hasActedThisTurn) {
+    triggerUsedCardFeedback(attacker, nowMs);
+    return;
+  }
+
+  const targetSlotIndex = direction === 'left' ? attacker.fieldSlotIndex - 1 : attacker.fieldSlotIndex + 1;
+  const defender = getCardAtSlot(targetSlotIndex);
+
+  if (!defender || defender.owner === attacker.owner) {
+    return;
+  }
+
+  gameState.interactionLock = true;
+  updateEndTurnButton();
+  attacker.combat.hasActedThisTurn = true;
+
+  const attackerPower = direction === 'left' ? attacker.combat.attackLeft : attacker.combat.attackRight;
+  const defenderPower = direction === 'left' ? defender.combat.attackRight : defender.combat.attackLeft;
+
+  const destroyedCards = [];
+  if (attackerPower > defenderPower) {
+    destroyedCards.push(defender);
+  } else if (attackerPower < defenderPower) {
+    destroyedCards.push(attacker);
+  } else {
+    destroyedCards.push(attacker, defender);
+  }
+
+  attacker.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+  defender.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+
+  setTimeout(() => {
+    const removeAt = performance.now();
+    destroyedCards.forEach((card) => {
+      markCardDestroyed(card, removeAt);
+    });
+
+    setTimeout(() => {
+      gameState.interactionLock = false;
+      recomputeSlotOccupancy();
+      updateEndTurnButton();
+    }, DESTROY_ANIMATION_MS);
+  }, HIT_FLASH_MS);
+}
+
+function updateAnimations(nowMs) {
+  gameState.cards.forEach((card) => {
+    if (!card.ui.animation) {
+      return;
+    }
+
+    const { fromX, fromY, toX, toY, startMs, durationMs, onComplete } = card.ui.animation;
+    const t = Math.min((nowMs - startMs) / durationMs, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+
+    card.x = fromX + (toX - fromX) * eased;
+    card.y = fromY + (toY - fromY) * eased;
+
+    if (t >= 1) {
+      card.x = toX;
+      card.y = toY;
+      card.ui.animation = null;
+      if (typeof onComplete === 'function') {
+        onComplete();
+      }
+    }
+  });
+
+  gameState.cards = gameState.cards.filter((card) => {
+    if (!card.ui.pendingRemoval) {
+      return true;
+    }
+    return nowMs < card.ui.destroyUntilMs;
+  });
 }
 
 function getCanvasPoint(event) {
@@ -175,151 +449,15 @@ function getTopCardAtPoint(point, predicate) {
   return candidates.find((card) => pointInCard(point.x, point.y, card)) ?? null;
 }
 
-// ========================================
-// アニメーション・演出
-// ========================================
-function startMoveAnimation(card, toX, toY, onComplete) {
-  card.ui.animation = {
-    type: 'move',
-    fromX: card.x,
-    fromY: card.y,
-    toX,
-    toY,
-    startMs: performance.now(),
-    durationMs: MOVE_ANIMATION_MS,
-    onComplete,
-  };
-}
-
-function markCardDestroyed(card, nowMs) {
-  card.ui.destroyStartMs = nowMs;
-  card.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
-  card.ui.pendingRemoval = true;
-
-  // 仕様: 消滅したカードのスロットは即空く
-  if (card.fieldSlotIndex !== null) {
-    const slot = slotCenters[card.fieldSlotIndex];
-    if (slot && slot.occupiedByCardId === card.id) {
-      slot.occupiedByCardId = null;
-    }
-  }
-  card.fieldSlotIndex = null;
-}
-
-function triggerUsedCardFeedback(card, nowMs) {
-  // 行動済みカードをスワイプした時の軽い揺れ + 赤い×表示
-  card.ui.shakeUntilMs = nowMs + SHAKE_DURATION_MS;
-  card.ui.crossUntilMs = nowMs + SHAKE_DURATION_MS;
-}
-
-function updateAnimations(nowMs) {
-  gameState.cards.forEach((card) => {
-    if (!card.ui.animation) {
-      return;
-    }
-
-    const { fromX, fromY, toX, toY, startMs, durationMs, onComplete } = card.ui.animation;
-    const t = Math.min((nowMs - startMs) / durationMs, 1);
-    const eased = 1 - Math.pow(1 - t, 3);
-
-    card.x = fromX + (toX - fromX) * eased;
-    card.y = fromY + (toY - fromY) * eased;
-
-    if (t >= 1) {
-      card.x = toX;
-      card.y = toY;
-      card.ui.animation = null;
-      if (typeof onComplete === 'function') {
-        onComplete();
-      }
-    }
-  });
-
-  // 破壊アニメ完了後にカードをリストから除外
-  gameState.cards = gameState.cards.filter((card) => {
-    if (!card.ui.pendingRemoval) {
-      return true;
-    }
-    return nowMs < card.ui.destroyUntilMs;
-  });
-}
-
-// ========================================
-// 戦闘ロジック
-// ========================================
-function resolveSwipeAttack(attacker, direction) {
-  const nowMs = performance.now();
-
-  // 解決中ロック中は入力無効
-  if (gameState.interactionLock) {
-    return;
-  }
-
-  // プレイヤーの場カードのみ攻撃可能
-  if (attacker.zone !== 'field' || attacker.owner !== 'player' || attacker.fieldSlotIndex === null) {
-    return;
-  }
-
-  // 1カード1回制限
-  if (attacker.combat.hasActedThisTurn) {
-    triggerUsedCardFeedback(attacker, nowMs);
-    return;
-  }
-
-  const targetSlotIndex = direction === 'left' ? attacker.fieldSlotIndex - 1 : attacker.fieldSlotIndex + 1;
-  const defender = getCardAtSlot(targetSlotIndex);
-
-  // 対象なし・同陣営は何も起きない
-  if (!defender || defender.owner === attacker.owner) {
-    return;
-  }
-
-  gameState.interactionLock = true;
-  attacker.combat.hasActedThisTurn = true;
-
-  // 方向別比較: 左なら attacker.left vs defender.right / 右なら attacker.right vs defender.left
-  const attackerPower = direction === 'left' ? attacker.combat.attackLeft : attacker.combat.attackRight;
-  const defenderPower = direction === 'left' ? defender.combat.attackRight : defender.combat.attackLeft;
-
-  const destroyedCards = [];
-  if (attackerPower > defenderPower) {
-    destroyedCards.push(defender);
-  } else if (attackerPower < defenderPower) {
-    destroyedCards.push(attacker);
-  } else {
-    destroyedCards.push(attacker, defender);
-  }
-
-  // ヒット演出
-  attacker.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
-  defender.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
-
-  // ヒット演出後に破壊処理、その後ロック解除
-  setTimeout(() => {
-    const removeAt = performance.now();
-    destroyedCards.forEach((card) => {
-      markCardDestroyed(card, removeAt);
-    });
-
-    setTimeout(() => {
-      gameState.interactionLock = false;
-    }, DESTROY_ANIMATION_MS);
-  }, HIT_FLASH_MS);
-}
-
-// ========================================
-// 入力処理
-// ========================================
 function onPointerDown(event) {
-  if (gameState.interactionLock || gameState.activePointer !== null) {
+  if (!isPlayerMainTurn() || gameState.interactionLock || gameState.activePointer !== null) {
     return;
   }
 
   event.preventDefault();
   const point = getCanvasPoint(event);
 
-  // 1) まず手札ドラッグを優先判定
-  const handCard = getTopCardAtPoint(point, (card) => card.zone === 'hand' && !card.ui.animation);
+  const handCard = getTopCardAtPoint(point, (card) => card.zone === 'hand' && card.owner === 'player' && !card.ui.animation);
   if (handCard) {
     handCard.ui.isDragging = true;
     gameState.activePointer = {
@@ -335,7 +473,6 @@ function onPointerDown(event) {
     return;
   }
 
-  // 2) 次に場カードのスワイプ判定
   const fieldCard = getTopCardAtPoint(
     point,
     (card) => card.zone === 'field' && card.owner === 'player' && !card.ui.pendingRemoval,
@@ -390,7 +527,6 @@ function onPointerUp(event) {
   const pointerState = gameState.activePointer;
   const card = getCardById(pointerState.cardId);
 
-  // 手札ドラッグ終了
   if (card && pointerState.kind === 'drag') {
     card.ui.isDragging = false;
 
@@ -399,23 +535,27 @@ function onPointerUp(event) {
     );
 
     gameState.interactionLock = true;
+    updateEndTurnButton();
+
     if (targetSlot) {
       startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
         card.zone = 'field';
         card.handIndex = null;
         card.fieldSlotIndex = targetSlot.id;
         targetSlot.occupiedByCardId = card.id;
+        reflowHand('player');
         gameState.interactionLock = false;
+        updateEndTurnButton();
       });
     } else {
       startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
         card.zone = 'hand';
         gameState.interactionLock = false;
+        updateEndTurnButton();
       });
     }
   }
 
-  // スワイプ終了
   if (card && pointerState.kind === 'swipe') {
     const deltaX = pointerState.currentX - pointerState.startX;
     const deltaY = pointerState.currentY - pointerState.startY;
@@ -436,12 +576,15 @@ function onPointerUp(event) {
   gameState.activePointer = null;
 }
 
-// ========================================
-// 描画
-// ========================================
 function drawTable() {
   ctx.fillStyle = '#1d2f4f';
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // 敵ターン中は全体に軽く赤系オーバーレイ
+  if (gameState.turn.currentPlayer === 'enemy' && gameState.turn.phase === 'main') {
+    ctx.fillStyle = 'rgba(138, 40, 40, 0.16)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  }
 
   ctx.fillStyle = '#13233e';
   ctx.fillRect(0, 500, CANVAS_WIDTH, 220);
@@ -455,11 +598,9 @@ function drawTable() {
     ctx.strokeRect(slot.x - CARD_WIDTH / 2, slot.y - CARD_HEIGHT / 2, CARD_WIDTH, CARD_HEIGHT);
   });
   ctx.setLineDash([]);
-
 }
 
 function drawHudLabels() {
-  // ラベルは最前面で描画し、他の要素に埋もれないようにする
   ctx.fillStyle = '#d6e0f4';
   ctx.font = '16px sans-serif';
   ctx.fillText('ENEMY HAND (4)', 20, 40);
@@ -469,12 +610,20 @@ function drawHudLabels() {
   ctx.fillStyle = '#b8c2d9';
   ctx.font = '13px sans-serif';
   ctx.fillText('Field cards: swipe left/right to attack adjacent enemy', 250, 40);
+
+  if (gameState.turn.currentPlayer) {
+    ctx.fillStyle = '#ecf2ff';
+    ctx.font = 'bold 15px sans-serif';
+    const turnText = `Turn ${gameState.turn.number} - ${gameState.turn.currentPlayer.toUpperCase()} (${gameState.turn.phase})`;
+    ctx.fillText(turnText, 20, 78);
+  }
 }
 
 function drawEnemyHandPlaceholders() {
-  enemyHandCenters.forEach((pos) => {
-    const left = pos.x - CARD_WIDTH / 2;
-    const top = pos.y - CARD_HEIGHT / 2;
+  const enemyHands = getHandCards('enemy').sort((a, b) => (a.handIndex ?? 0) - (b.handIndex ?? 0));
+  enemyHands.forEach((card) => {
+    const left = card.x - CARD_WIDTH / 2;
+    const top = card.y - CARD_HEIGHT / 2;
     ctx.fillStyle = '#344566';
     ctx.strokeStyle = '#6177a3';
     ctx.lineWidth = 2;
@@ -507,6 +656,11 @@ function drawCards(nowMs) {
   });
 
   orderedCards.forEach((card) => {
+    // 敵手札は裏向き表示にする
+    if (card.owner === 'enemy' && card.zone === 'hand') {
+      return;
+    }
+
     const isShaking = nowMs < card.ui.shakeUntilMs;
     const shakeX = isShaking ? Math.sin(nowMs * 0.07) * 5 : 0;
 
@@ -568,27 +722,116 @@ function drawCards(nowMs) {
   });
 }
 
-function draw() {
-  const nowMs = performance.now();
+function drawCoinToss(nowMs) {
+  if (!gameState.turn.coin.active) {
+    return;
+  }
+
+  const elapsed = nowMs - gameState.turn.coin.startMs;
+  const progress = Math.min(elapsed / gameState.turn.coin.durationMs, 1);
+
+  const centerX = CANVAS_WIDTH / 2;
+  const baseY = 300;
+  const dropY = progress < 0.65 ? baseY - Math.sin(progress * Math.PI) * 40 : baseY + (progress - 0.65) * 120;
+
+  const spin = progress * 10 * Math.PI;
+  const scaleX = Math.abs(Math.cos(spin));
+  const radius = 44;
+
+  ctx.save();
+  ctx.translate(centerX, dropY);
+  ctx.scale(Math.max(scaleX, 0.08), 1);
+
+  const showingWhite = Math.cos(spin) >= 0;
+  ctx.fillStyle = showingWhite ? '#efefef' : '#1e1e1e';
+  ctx.strokeStyle = '#c6c6c6';
+  ctx.lineWidth = 4;
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = '#f2f7ff';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('COIN TOSS', centerX, 210);
+  ctx.textAlign = 'left';
+}
+
+function drawTurnBanner(nowMs) {
+  if (!gameState.turn.bannerText || nowMs > gameState.turn.bannerUntilMs) {
+    return;
+  }
+
+  const remain = gameState.turn.bannerUntilMs - nowMs;
+  const alpha = Math.min(remain / 260, 1) * 0.82;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(12, 18, 33, 0.55)';
+  ctx.fillRect(120, 300, 720, 110);
+  ctx.fillStyle = '#f0f4ff';
+  ctx.font = 'bold 40px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(gameState.turn.bannerText, CANVAS_WIDTH / 2, 370);
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+function updateTurnFlow(nowMs) {
+  if (gameState.turn.phase === 'coin_toss' && gameState.turn.coin.active) {
+    const elapsed = nowMs - gameState.turn.coin.startMs;
+    if (elapsed >= gameState.turn.coin.durationMs) {
+      gameState.turn.coin.active = false;
+      gameState.turn.firstPlayer = gameState.turn.coin.resultFirstPlayer;
+      gameState.interactionLock = false;
+      beginTurn(gameState.turn.firstPlayer, false);
+    }
+    return;
+  }
+
+  if (gameState.turn.phase === 'main') {
+    if (gameState.turn.currentPlayer === 'enemy' && nowMs >= gameState.turn.enemyAutoEndAtMs) {
+      endCurrentTurn('enemy_auto');
+      return;
+    }
+
+    if (gameState.turn.currentPlayer === 'player' && !gameState.interactionLock && !canOwnerAct('player')) {
+      endCurrentTurn('no_actions');
+    }
+  }
+
+  updateEndTurnButton();
+}
+
+function draw(nowMs) {
   drawTable();
   drawEnemyHandPlaceholders();
   drawCards(nowMs);
   drawHudLabels();
+  drawCoinToss(nowMs);
+  drawTurnBanner(nowMs);
 }
 
 function loop(nowMs) {
   updateAnimations(nowMs);
-  draw();
+  recomputeSlotOccupancy();
+  updateTurnFlow(nowMs);
+  draw(nowMs);
   requestAnimationFrame(loop);
 }
 
-// ========================================
-// 起動
-// ========================================
 canvas.addEventListener('pointerdown', onPointerDown);
 canvas.addEventListener('pointermove', onPointerMove);
 canvas.addEventListener('pointerup', onPointerUp);
 canvas.addEventListener('pointercancel', onPointerUp);
+
+endTurnButton.addEventListener('click', () => {
+  endCurrentTurn('manual');
+});
+
 resetButton.addEventListener('click', resetGame);
 
 resetGame();

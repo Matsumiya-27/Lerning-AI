@@ -68,3 +68,26 @@
    - Player/enemy cards are color-accented.
    - Hit flash occurs before destruction.
    - Destroyed cards fade/shrink out quickly.
+
+## 6. Turn Flow System (Prototype)
+1. Turn order setup
+   - Randomly determine first/second player at game start.
+   - Coin-toss style animation is displayed before the first turn starts.
+
+2. Initial hands
+   - Both player and enemy receive 4 cards.
+   - Since deck is not implemented yet, cards are generated randomly.
+
+3. Turn phases
+   - Draw phase: draw until hand size reaches 4.
+   - Main phase: active side can take actions.
+   - End turn: switch to the opponent.
+
+4. Main phase behavior
+   - Player turn: can place cards and swipe-attack as before.
+   - Enemy turn (temporary): no AI actions yet; only turn-end declaration is processed.
+
+5. End turn conditions
+   - Player can end turn manually with the right-side End Turn button.
+   - End Turn button is enabled only during player's Main phase.
+   - If no playable action remains, the turn ends automatically.
