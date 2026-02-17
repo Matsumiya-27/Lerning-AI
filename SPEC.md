@@ -6,7 +6,8 @@
 - Layout:
   - Near side (bottom): player's hand (4 cards).
   - Middle: field slots (5 dashed slots, evenly spaced, horizontal).
-  - Right side: debug reset button.
+  - Right side: debug reset button (outside canvas).
+  - Turn control: `END TURN` button rendered inside canvas (right-center).
 
 ## 2. Visual
 - Cards are simple white rectangles.
@@ -89,6 +90,6 @@
    - Enemy turn (temporary): no AI actions yet; only turn-end declaration is processed.
 
 5. End turn conditions
-   - Player can end turn manually with the right-side End Turn button.
+   - Player can end turn manually with the in-canvas `END TURN` button (right-center).
    - End Turn button is enabled only during player's Main phase.
    - If no playable action remains, the turn ends automatically.

@@ -24,10 +24,16 @@ const TURN_BANNER_MS = 900;
 const ENEMY_AUTO_END_MS = 850;
 const COIN_TOSS_MS = 1200;
 
+const END_TURN_UI = {
+  x: 782,
+  y: 334,
+  width: 160,
+  height: 56,
+};
+
 // ===== DOM =====
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const endTurnButton = document.getElementById('endTurnButton');
 const resetButton = document.getElementById('resetButton');
 
 // ===== レイアウト =====
@@ -198,10 +204,8 @@ function isPlayerMainTurn() {
   return gameState.turn.phase === 'main' && gameState.turn.currentPlayer === 'player';
 }
 
-function updateEndTurnButton() {
-  const enabled = isPlayerMainTurn() && !gameState.interactionLock;
-  endTurnButton.disabled = !enabled;
-  endTurnButton.textContent = enabled ? 'End Turn' : 'End Turn (Locked)';
+function canUseEndTurnButton() {
+  return isPlayerMainTurn() && !gameState.interactionLock;
 }
 
 function applyDrawPhase(owner) {
@@ -229,7 +233,6 @@ function beginMainPhase(owner) {
     showBanner(`ENEMY TURN ${gameState.turn.number}`);
   }
 
-  updateEndTurnButton();
 }
 
 function beginTurn(owner, isNewRound = false) {
@@ -257,7 +260,6 @@ function endCurrentTurn(reason = 'manual') {
   }
 
   gameState.interactionLock = true;
-  updateEndTurnButton();
 
   const current = gameState.turn.currentPlayer;
   const next = current === 'player' ? 'enemy' : 'player';
@@ -278,7 +280,6 @@ function startCoinToss() {
   gameState.turn.coin.startMs = nowMs;
   gameState.turn.coin.resultFirstPlayer = Math.random() < 0.5 ? 'player' : 'enemy';
   gameState.interactionLock = true;
-  updateEndTurnButton();
 }
 
 function resetGame() {
@@ -358,7 +359,6 @@ function resolveSwipeAttack(attacker, direction) {
   }
 
   gameState.interactionLock = true;
-  updateEndTurnButton();
   attacker.combat.hasActedThisTurn = true;
 
   const attackerPower = direction === 'left' ? attacker.combat.attackLeft : attacker.combat.attackRight;
@@ -385,8 +385,7 @@ function resolveSwipeAttack(attacker, direction) {
     setTimeout(() => {
       gameState.interactionLock = false;
       recomputeSlotOccupancy();
-      updateEndTurnButton();
-    }, DESTROY_ANIMATION_MS);
+        }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
 }
 
@@ -441,6 +440,10 @@ function pointInSlot(px, py, slot) {
   return px >= left && px <= left + CARD_WIDTH && py >= top && py <= top + CARD_HEIGHT;
 }
 
+function pointInRect(px, py, rect) {
+  return px >= rect.x && px <= rect.x + rect.width && py >= rect.y && py <= rect.y + rect.height;
+}
+
 function getTopCardAtPoint(point, predicate) {
   const candidates = gameState.cards
     .filter((card) => !card.ui.pendingRemoval && predicate(card))
@@ -450,12 +453,22 @@ function getTopCardAtPoint(point, predicate) {
 }
 
 function onPointerDown(event) {
-  if (!isPlayerMainTurn() || gameState.interactionLock || gameState.activePointer !== null) {
+  if (gameState.interactionLock || gameState.activePointer !== null) {
     return;
   }
 
   event.preventDefault();
   const point = getCanvasPoint(event);
+
+  // Canvas内のEnd Turnボタン（右中央）
+  if (pointInRect(point.x, point.y, END_TURN_UI) && canUseEndTurnButton()) {
+    endCurrentTurn('manual');
+    return;
+  }
+
+  if (!isPlayerMainTurn()) {
+    return;
+  }
 
   const handCard = getTopCardAtPoint(point, (card) => card.zone === 'hand' && card.owner === 'player' && !card.ui.animation);
   if (handCard) {
@@ -535,8 +548,7 @@ function onPointerUp(event) {
     );
 
     gameState.interactionLock = true;
-    updateEndTurnButton();
-
+  
     if (targetSlot) {
       startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
         card.zone = 'field';
@@ -545,14 +557,12 @@ function onPointerUp(event) {
         targetSlot.occupiedByCardId = card.id;
         reflowHand('player');
         gameState.interactionLock = false;
-        updateEndTurnButton();
-      });
+            });
     } else {
       startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
         card.zone = 'hand';
         gameState.interactionLock = false;
-        updateEndTurnButton();
-      });
+            });
     }
   }
 
@@ -722,6 +732,28 @@ function drawCards(nowMs) {
   });
 }
 
+
+function drawCanvasEndTurnButton() {
+  const enabled = canUseEndTurnButton();
+  const { x, y, width, height } = END_TURN_UI;
+
+  ctx.save();
+  ctx.fillStyle = enabled ? '#1f304d' : '#232a38';
+  ctx.strokeStyle = enabled ? '#6aa7ff' : '#55627a';
+  ctx.lineWidth = 2;
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeRect(x, y, width, height);
+
+  ctx.fillStyle = enabled ? '#e8f1ff' : '#aeb8cc';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('END TURN', x + width / 2, y + height / 2);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
 function drawCoinToss(nowMs) {
   if (!gameState.turn.coin.active) {
     return;
@@ -803,7 +835,6 @@ function updateTurnFlow(nowMs) {
     }
   }
 
-  updateEndTurnButton();
 }
 
 function draw(nowMs) {
@@ -811,6 +842,7 @@ function draw(nowMs) {
   drawEnemyHandPlaceholders();
   drawCards(nowMs);
   drawHudLabels();
+  drawCanvasEndTurnButton();
   drawCoinToss(nowMs);
   drawTurnBanner(nowMs);
 }
@@ -828,9 +860,6 @@ canvas.addEventListener('pointermove', onPointerMove);
 canvas.addEventListener('pointerup', onPointerUp);
 canvas.addEventListener('pointercancel', onPointerUp);
 
-endTurnButton.addEventListener('click', () => {
-  endCurrentTurn('manual');
-});
 
 resetButton.addEventListener('click', resetGame);
 
