@@ -7,7 +7,7 @@
   - Near side (bottom): player's hand (4 cards).
   - Middle: field slots (5 dashed slots, evenly spaced, horizontal).
   - Right side: debug reset button (outside canvas).
-  - Turn control: `END TURN` button rendered inside canvas (right-center).
+  - Turn control: a **circular** `END TURN` button rendered inside canvas (right-center).
 
 ## 2. Visual
 - Cards are simple white rectangles.
@@ -77,11 +77,12 @@
    - Coin-toss style animation is displayed before the first turn starts.
 
 2. Initial hands
-   - Both player and enemy receive 4 cards.
+   - Both player and enemy receive 4 cards at game start.
    - Since deck is not implemented yet, cards are generated randomly.
+   - Hand capacity is up to **9** cards.
 
 3. Turn phases
-   - Draw phase: draw until hand size reaches 4.
+   - Draw phase: if hand is below 4, draw up to 4; if hand is 4 or more, draw 1 card (up to 9 max).
    - Main phase: active side can take actions.
    - End turn: switch to the opponent.
 
@@ -90,6 +91,6 @@
    - Enemy turn (temporary): no AI actions yet; only turn-end declaration is processed.
 
 5. End turn conditions
-   - Player can end turn manually with the in-canvas `END TURN` button (right-center).
+   - Player can end turn manually with the in-canvas circular `END TURN` button (right-center).
    - End Turn button is enabled only during player's Main phase.
    - If no playable action remains, the turn ends automatically.

@@ -18,17 +18,18 @@ const SHAKE_DURATION_MS = 260;
 const HIT_FLASH_MS = 120;
 const DESTROY_ANIMATION_MS = 150;
 
-const MAX_HAND = 4;
+const STARTING_HAND = 4;
+const MIN_HAND_AFTER_DRAW = 4;
+const MAX_HAND = 9;
 const MAX_FIELD_SLOTS = 5;
 const TURN_BANNER_MS = 900;
 const ENEMY_AUTO_END_MS = 850;
 const COIN_TOSS_MS = 1200;
 
 const END_TURN_UI = {
-  x: 782,
-  y: 334,
-  width: 160,
-  height: 56,
+  x: 850,
+  y: 360,
+  radius: 60,
 };
 
 // ===== DOM =====
@@ -44,8 +45,22 @@ const slotCenters = [180, 330, 480, 630, 780].map((x, index) => ({
   occupiedByCardId: null,
 }));
 
-const playerHandCenters = [255, 405, 555, 705].map((x) => ({ x, y: 620 }));
-const enemyHandCenters = [255, 405, 555, 705].map((x) => ({ x, y: 100 }));
+function getHandCenter(owner, handIndex, handCount) {
+  const y = owner === 'player' ? 620 : 100;
+  if (handCount <= 1) {
+    return { x: CANVAS_WIDTH / 2, y };
+  }
+
+  // 9枚手札でも収まるよう、左右余白を固定して均等配置する
+  const minX = 120;
+  const maxX = 840;
+  const span = maxX - minX;
+  const t = handIndex / (handCount - 1);
+  return {
+    x: minX + span * t,
+    y,
+  };
+}
 
 // ===== 全体状態 =====
 const gameState = {
@@ -104,7 +119,7 @@ function randomAttackValue() {
 function drawRandomCardToHand(owner) {
   const handCards = getHandCards(owner);
   const handIndex = handCards.length;
-  const center = owner === 'player' ? playerHandCenters[handIndex] : enemyHandCenters[handIndex];
+  const center = getHandCenter(owner, handIndex, handIndex + 1);
   const card = createCard({
     id: gameState.nextCardId,
     owner,
@@ -126,7 +141,7 @@ function buildInitialCards() {
     slot.occupiedByCardId = null;
   });
 
-  for (let i = 0; i < MAX_HAND; i += 1) {
+  for (let i = 0; i < STARTING_HAND; i += 1) {
     drawRandomCardToHand('player');
     drawRandomCardToHand('enemy');
   }
@@ -149,15 +164,16 @@ function recomputeSlotOccupancy() {
 }
 
 function reflowHand(owner) {
-  const centers = owner === 'player' ? playerHandCenters : enemyHandCenters;
   const handCards = gameState.cards
     .filter((card) => card.owner === owner && card.zone === 'hand' && !card.ui.pendingRemoval)
     .sort((a, b) => (a.handIndex ?? 0) - (b.handIndex ?? 0));
 
+  const handCount = handCards.length;
   handCards.forEach((card, index) => {
+    const center = getHandCenter(owner, index, handCount);
     card.handIndex = index;
-    card.x = centers[index].x;
-    card.y = centers[index].y;
+    card.x = center.x;
+    card.y = center.y;
   });
 }
 
@@ -209,7 +225,12 @@ function canUseEndTurnButton() {
 }
 
 function applyDrawPhase(owner) {
-  while (getHandCards(owner).length < MAX_HAND) {
+  const handCountAtStart = getHandCards(owner).length;
+  const drawTarget = handCountAtStart >= MIN_HAND_AFTER_DRAW
+    ? Math.min(handCountAtStart + 1, MAX_HAND)
+    : Math.min(MIN_HAND_AFTER_DRAW, MAX_HAND);
+
+  while (getHandCards(owner).length < drawTarget) {
     drawRandomCardToHand(owner);
   }
   reflowHand(owner);
@@ -440,8 +461,10 @@ function pointInSlot(px, py, slot) {
   return px >= left && px <= left + CARD_WIDTH && py >= top && py <= top + CARD_HEIGHT;
 }
 
-function pointInRect(px, py, rect) {
-  return px >= rect.x && px <= rect.x + rect.width && py >= rect.y && py <= rect.y + rect.height;
+function pointInCircle(px, py, circle) {
+  const dx = px - circle.x;
+  const dy = py - circle.y;
+  return dx * dx + dy * dy <= circle.radius * circle.radius;
 }
 
 function getTopCardAtPoint(point, predicate) {
@@ -461,7 +484,7 @@ function onPointerDown(event) {
   const point = getCanvasPoint(event);
 
   // Canvas内のEnd Turnボタン（右中央）
-  if (pointInRect(point.x, point.y, END_TURN_UI) && canUseEndTurnButton()) {
+  if (pointInCircle(point.x, point.y, END_TURN_UI) && canUseEndTurnButton()) {
     endCurrentTurn('manual');
     return;
   }
@@ -613,9 +636,9 @@ function drawTable() {
 function drawHudLabels() {
   ctx.fillStyle = '#d6e0f4';
   ctx.font = '16px sans-serif';
-  ctx.fillText('ENEMY HAND (4)', 20, 40);
+  ctx.fillText(`ENEMY HAND (${getHandCards('enemy').length}/${MAX_HAND})`, 20, 40);
   ctx.fillText('FIELD (max 5)', 20, 360 - CARD_HEIGHT / 2 - 20);
-  ctx.fillText('YOUR HAND (4)', 20, 690);
+  ctx.fillText(`YOUR HAND (${getHandCards('player').length}/${MAX_HAND})`, 20, 690);
 
   ctx.fillStyle = '#b8c2d9';
   ctx.font = '13px sans-serif';
@@ -735,20 +758,33 @@ function drawCards(nowMs) {
 
 function drawCanvasEndTurnButton() {
   const enabled = canUseEndTurnButton();
-  const { x, y, width, height } = END_TURN_UI;
+  const { x, y, radius } = END_TURN_UI;
 
   ctx.save();
-  ctx.fillStyle = enabled ? '#1f304d' : '#232a38';
-  ctx.strokeStyle = enabled ? '#6aa7ff' : '#55627a';
-  ctx.lineWidth = 2;
-  ctx.fillRect(x, y, width, height);
-  ctx.strokeRect(x, y, width, height);
+  const fill = enabled ? '#1f304d' : '#232a38';
+  const stroke = enabled ? '#6aa7ff' : '#55627a';
+
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // 内側リングで押せるボタン感を強調
+  ctx.strokeStyle = enabled ? '#96c4ff' : '#6b7488';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, radius - 8, 0, Math.PI * 2);
+  ctx.stroke();
 
   ctx.fillStyle = enabled ? '#e8f1ff' : '#aeb8cc';
-  ctx.font = 'bold 16px sans-serif';
+  ctx.font = 'bold 15px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('END TURN', x + width / 2, y + height / 2);
+  ctx.fillText('END', x, y - 9);
+  ctx.fillText('TURN', x, y + 12);
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
