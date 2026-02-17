@@ -1,7 +1,8 @@
 # Canvas Card Game MVP Spec
 
 ## 1. Screen
-- Fixed canvas size: **960 x 720** (4:3).
+- Internal game coordinate size: **960 x 720** (4:3).
+- Display is responsive: the canvas is scaled to fit the viewport while preserving the 4:3 aspect ratio.
 - Layout:
   - Near side (bottom): player's hand (4 cards).
   - Middle: field slots (5 dashed slots, evenly spaced, horizontal).
