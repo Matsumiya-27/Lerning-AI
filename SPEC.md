@@ -42,6 +42,7 @@
 ## 5. Combat System (New Stage)
 1. Card parameters
    - Each card has directional attack values: `attackValue.left` and `attackValue.right`.
+   - Values are generated in a bounded pair so that `left + right = 5` (swing is controlled).
 
 2. Swipe attack on field
    - Player field cards can perform attacks by horizontal swipe.
@@ -91,6 +92,7 @@
 4. Main phase behavior
    - Player turn: can place cards and swipe-attack as before.
    - Enemy turn (prototype AI): chooses actions automatically (attack if favorable/equal-trade; otherwise summon).
+   - If field is full and a stronger card exists in hand, enemy may remove a weaker own field card and replace it.
    - Enemy placement preference: aims to keep enemy cards alive and orient higher attack values toward adjacent player cards (edge-oriented heuristic included).
 
 5. End turn conditions
@@ -114,8 +116,9 @@
 ## 8. Presentation Update (Prototype)
 1. HUD labels cleanup
    - Removed textual area labels such as EnemyHand / Field / YourHand helper captions.
+   - Turn information is integrated into the in-canvas END TURN button (player: Turn + End, enemy: Turn + Enemy).
 2. HP visualization
-   - HP is shown as prominent circular badges.
+   - HP is shown as prominent circular badges (enemy: top-right edge, player: bottom-left edge).
    - HP color changes by remaining ratio: green -> yellow -> red.
 3. Attack feedback
    - Added screen shake, floating damage text, and HP remaining pop text.

@@ -134,13 +134,23 @@ function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, 
 }
 
 function randomAttackValue() {
-  return Math.floor(Math.random() * 7) + 1;
+  return Math.floor(Math.random() * 4) + 1;
+}
+
+function randomAttackPair() {
+  // 左右合計が常に5になるようにして、強さの振れ幅を抑える
+  const left = randomAttackValue();
+  return {
+    left,
+    right: 5 - left,
+  };
 }
 
 function drawRandomCardToHand(owner) {
   const handCards = getHandCards(owner);
   const handIndex = handCards.length;
   const center = getHandCenter(owner, handIndex, handIndex + 1);
+  const pair = randomAttackPair();
   const card = createCard({
     id: gameState.nextCardId,
     owner,
@@ -148,8 +158,8 @@ function drawRandomCardToHand(owner) {
     handIndex,
     x: center.x,
     y: center.y,
-    attackLeft: randomAttackValue(),
-    attackRight: randomAttackValue(),
+    attackLeft: pair.left,
+    attackRight: pair.right,
   });
   gameState.nextCardId += 1;
   gameState.cards.push(card);
@@ -513,9 +523,9 @@ function resolveDirectAttack(attacker) {
   setTimeout(() => {
     gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - 1);
     triggerScreenShake(8, 210);
-    const hpBadgeY = targetOwner === 'enemy' ? 90 : 630;
-    addDamageText(860, hpBadgeY - 38, '-1', '#ff5252');
-    addDamageText(860, hpBadgeY + 48, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
+    const hpPos = getHpBadgePosition(targetOwner);
+    addDamageText(hpPos.x, hpPos.y - 42, '-1', '#ff5252');
+    addDamageText(hpPos.x, hpPos.y + 52, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
     if (gameState.hp[targetOwner] <= 0) {
       finishGame(attacker.owner);
       return;
@@ -580,6 +590,53 @@ function chooseBestEnemySummon() {
   });
 
   return best;
+}
+
+function chooseEnemyReplacement() {
+  const hand = getHandCards('enemy');
+  const field = getFieldCards('enemy').filter((card) => card.fieldSlotIndex !== null);
+
+  if (hand.length === 0 || field.length === 0 || hasEmptyFieldSlot()) {
+    return null;
+  }
+
+  const getCardStrength = (card) => Math.max(card.combat.attackLeft, card.combat.attackRight);
+
+  let weakestField = field[0];
+  let weakestScore = getCardStrength(weakestField);
+
+  field.forEach((card) => {
+    const score = getCardStrength(card);
+    if (score < weakestScore) {
+      weakestScore = score;
+      weakestField = card;
+    }
+  });
+
+  let bestHand = hand[0];
+  let bestHandScore = getCardStrength(bestHand);
+  hand.forEach((card) => {
+    const score = getCardStrength(card);
+    if (score > bestHandScore) {
+      bestHandScore = score;
+      bestHand = card;
+    }
+  });
+
+  if (bestHandScore <= weakestScore) {
+    return null;
+  }
+
+  const slotIndex = weakestField.fieldSlotIndex;
+  if (slotIndex === null) {
+    return null;
+  }
+
+  return {
+    removeCard: weakestField,
+    summonCard: bestHand,
+    slotIndex,
+  };
 }
 
 function chooseBestEnemyAttack() {
@@ -662,6 +719,29 @@ function executeEnemyMainAction(nowMs) {
       card.handIndex = null;
       card.fieldSlotIndex = slotIndex;
       targetSlot.occupiedByCardId = card.id;
+      reflowHand('enemy');
+      gameState.interactionLock = false;
+    });
+
+    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+    return true;
+  }
+
+  const replacement = chooseEnemyReplacement();
+  if (replacement) {
+    const { removeCard, summonCard, slotIndex } = replacement;
+    const targetSlot = slotCenters[slotIndex];
+    gameState.interactionLock = true;
+
+    // より強い手札がある時は、弱い自陣カードを下げて枠を空ける
+    const removeAt = performance.now();
+    markCardDestroyed(removeCard, removeAt);
+
+    startMoveAnimation(summonCard, targetSlot.x, targetSlot.y, () => {
+      summonCard.zone = 'field';
+      summonCard.handIndex = null;
+      summonCard.fieldSlotIndex = slotIndex;
+      targetSlot.occupiedByCardId = summonCard.id;
       reflowHand('enemy');
       gameState.interactionLock = false;
     });
@@ -903,12 +983,7 @@ function drawTable() {
 }
 
 function drawHudLabels() {
-  if (gameState.turn.currentPlayer) {
-    ctx.fillStyle = '#ecf2ff';
-    ctx.font = 'bold 15px sans-serif';
-    const turnText = `Turn ${gameState.turn.number} - ${gameState.turn.currentPlayer.toUpperCase()} (${gameState.turn.phase})`;
-    ctx.fillText(turnText, 20, 78);
-  }
+  // 補助テキストは削減し、ターン情報はENDボタン側へ統合
 }
 
 function getHpColor(hp) {
@@ -954,6 +1029,13 @@ function drawHpBadge(owner, x, y) {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
+}
+
+function getHpBadgePosition(owner) {
+  if (owner === 'enemy') {
+    return { x: 918, y: 76 };
+  }
+  return { x: 70, y: 644 };
 }
 
 function drawDamageTexts(nowMs) {
@@ -1081,10 +1163,12 @@ function drawCards(nowMs) {
 function drawCanvasEndTurnButton() {
   const enabled = canUseEndTurnButton();
   const { x, y, radius } = END_TURN_UI;
+  const isEnemyMain = gameState.turn.phase === 'main' && gameState.turn.currentPlayer === 'enemy';
+  const turnLine = `Turn ${gameState.turn.number}`;
 
   ctx.save();
-  const fill = enabled ? '#1f304d' : '#232a38';
-  const stroke = enabled ? '#6aa7ff' : '#55627a';
+  const fill = enabled ? '#1f304d' : (isEnemyMain ? '#4a2020' : '#232a38');
+  const stroke = enabled ? '#6aa7ff' : (isEnemyMain ? '#ff8b8b' : '#55627a');
 
   ctx.fillStyle = fill;
   ctx.strokeStyle = stroke;
@@ -1101,12 +1185,20 @@ function drawCanvasEndTurnButton() {
   ctx.arc(x, y, radius - 8, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.fillStyle = enabled ? '#e8f1ff' : '#aeb8cc';
-  ctx.font = 'bold 15px sans-serif';
+  ctx.fillStyle = enabled ? '#e8f1ff' : (isEnemyMain ? '#ffd7d7' : '#aeb8cc');
+  ctx.font = 'bold 14px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('END', x, y - 9);
-  ctx.fillText('TURN', x, y + 12);
+  if (enabled) {
+    ctx.fillText(turnLine, x, y - 11);
+    ctx.fillText('End', x, y + 11);
+  } else if (isEnemyMain) {
+    ctx.fillText(turnLine, x, y - 11);
+    ctx.fillText('Enemy', x, y + 11);
+  } else {
+    ctx.fillText(turnLine, x, y - 11);
+    ctx.fillText('Wait', x, y + 11);
+  }
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.restore();
@@ -1238,8 +1330,10 @@ function draw(nowMs) {
   drawTable();
   drawEnemyHandPlaceholders();
   drawCards(nowMs);
-  drawHpBadge('enemy', 860, 90);
-  drawHpBadge('player', 860, 630);
+  const enemyHpPos = getHpBadgePosition('enemy');
+  const playerHpPos = getHpBadgePosition('player');
+  drawHpBadge('enemy', enemyHpPos.x, enemyHpPos.y);
+  drawHpBadge('player', playerHpPos.x, playerHpPos.y);
   drawDamageTexts(nowMs);
   drawHudLabels();
   drawCanvasEndTurnButton();
