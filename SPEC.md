@@ -83,6 +83,7 @@
 
 3. Turn phases
    - Draw phase: if hand is below 4, draw up to 4; if hand is 4 or more, draw 1 card (up to 9 max).
+   - Exception: on the first player's very first turn, the extra +1 draw (when already 4+) is disabled.
    - Main phase: active side can take actions.
    - End turn: switch to the opponent.
 
@@ -95,3 +96,15 @@
    - Player can end turn manually with the in-canvas circular `END TURN` button (right-center).
    - End Turn button is enabled only during player's Main phase.
    - If no playable action remains, the turn ends automatically.
+
+## 7. Direct Attack & HP Rule (Prototype)
+1. Both players have HP.
+   - Starting HP: 10.
+2. Direct attack
+   - A field card can spend its action to attack opponent HP directly.
+   - On success, opponent HP is reduced by 1.
+   - Direct attack shares the same once-per-turn action usage (`hasActedThisTurn`).
+3. First turn restriction
+   - The first player cannot perform direct attack on turn 1.
+4. Win condition
+   - If a side's HP reaches 0, the opponent wins immediately.

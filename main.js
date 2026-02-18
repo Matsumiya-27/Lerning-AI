@@ -21,12 +21,14 @@ const DESTROY_ANIMATION_MS = 150;
 const STARTING_HAND = 4;
 const MIN_HAND_AFTER_DRAW = 4;
 const MAX_HAND = 9;
+const STARTING_HP = 10;
 const MAX_FIELD_SLOTS = 5;
 const TURN_BANNER_MS = 900;
 const ENEMY_AUTO_END_MS = 850;
 const ENEMY_ACTION_DELAY_MS = 540;
 const COIN_TOSS_MS = 1200;
 const NO_ACTION_AUTO_END_DELAY_MS = 480;
+const DIRECT_ATTACK_HIT_MS = 190;
 
 const END_TURN_UI = {
   x: 900,
@@ -70,6 +72,13 @@ const gameState = {
   nextCardId: 0,
   interactionLock: false,
   activePointer: null,
+  result: {
+    winner: null,
+  },
+  hp: {
+    player: STARTING_HP,
+    enemy: STARTING_HP,
+  },
   turn: {
     number: 1,
     firstPlayer: null,
@@ -221,7 +230,8 @@ function hasAdjacentEnemyTarget(card) {
 function canOwnerAct(owner) {
   const canSummon = getHandCards(owner).length > 0 && hasEmptyFieldSlot();
   const canAttack = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && hasAdjacentEnemyTarget(card));
-  return canSummon || canAttack;
+  const canDirect = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn) && canDirectAttack(owner);
+  return canSummon || canAttack || canDirect;
 }
 
 function isPlayerMainTurn() {
@@ -229,13 +239,24 @@ function isPlayerMainTurn() {
 }
 
 function canUseEndTurnButton() {
-  return isPlayerMainTurn() && !gameState.interactionLock;
+  return isPlayerMainTurn() && !gameState.interactionLock && !gameState.result.winner;
+}
+
+function canDirectAttack(attackerOwner) {
+  // 先攻1ターン目だけ直接攻撃不可
+  if (gameState.turn.number === 1 && gameState.turn.currentPlayer === gameState.turn.firstPlayer) {
+    return attackerOwner !== gameState.turn.firstPlayer;
+  }
+  return true;
 }
 
 function applyDrawPhase(owner) {
   const handCountAtStart = getHandCards(owner).length;
+  const isOpeningTurnOfFirstPlayer = gameState.turn.number === 1 && owner === gameState.turn.firstPlayer;
   const drawTarget = handCountAtStart >= MIN_HAND_AFTER_DRAW
-    ? Math.min(handCountAtStart + 1, MAX_HAND)
+    ? (isOpeningTurnOfFirstPlayer
+      ? Math.min(MIN_HAND_AFTER_DRAW, MAX_HAND)
+      : Math.min(handCountAtStart + 1, MAX_HAND))
     : Math.min(MIN_HAND_AFTER_DRAW, MAX_HAND);
 
   while (getHandCards(owner).length < drawTarget) {
@@ -283,7 +304,7 @@ function beginTurn(owner, isNewRound = false) {
 }
 
 function endCurrentTurn(reason = 'manual') {
-  if (gameState.turn.phase !== 'main' || gameState.interactionLock) {
+  if (gameState.turn.phase !== 'main' || gameState.interactionLock || gameState.result.winner) {
     return;
   }
 
@@ -319,6 +340,9 @@ function resetGame() {
   buildInitialCards();
   gameState.interactionLock = false;
   gameState.activePointer = null;
+  gameState.result.winner = null;
+  gameState.hp.player = STARTING_HP;
+  gameState.hp.enemy = STARTING_HP;
 
   gameState.turn.number = 1;
   gameState.turn.firstPlayer = null;
@@ -426,6 +450,43 @@ function resolveSwipeAttack(attacker, direction) {
   }, HIT_FLASH_MS);
 }
 
+function finishGame(winner) {
+  gameState.result.winner = winner;
+  gameState.interactionLock = true;
+  showBanner(`${winner.toUpperCase()} WIN`, 1800);
+}
+
+function resolveDirectAttack(attacker) {
+  if (gameState.turn.phase !== 'main' || gameState.interactionLock || gameState.result.winner) {
+    return;
+  }
+
+  if (attacker.zone !== 'field' || attacker.owner !== gameState.turn.currentPlayer || attacker.fieldSlotIndex === null) {
+    return;
+  }
+
+  if (attacker.combat.hasActedThisTurn || !canDirectAttack(attacker.owner)) {
+    if (attacker.owner === 'player') {
+      triggerUsedCardFeedback(attacker, performance.now());
+    }
+    return;
+  }
+
+  const targetOwner = attacker.owner === 'player' ? 'enemy' : 'player';
+  attacker.combat.hasActedThisTurn = true;
+  attacker.ui.hitFlashUntilMs = performance.now() + HIT_FLASH_MS;
+  gameState.interactionLock = true;
+
+  setTimeout(() => {
+    gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - 1);
+    if (gameState.hp[targetOwner] <= 0) {
+      finishGame(attacker.owner);
+      return;
+    }
+    gameState.interactionLock = false;
+  }, DIRECT_ATTACK_HIT_MS);
+}
+
 function getEmptySlotIndices() {
   return slotCenters.filter((slot) => slot.occupiedByCardId === null).map((slot) => slot.id);
 }
@@ -524,6 +585,13 @@ function chooseBestEnemyAttack() {
     return null;
   }
 
+  if (canDirectAttack('enemy')) {
+    const directCandidate = attackers[0] ? { attacker: attackers[0], direction: 'direct', score: 18 + (STARTING_HP - gameState.hp.player) } : null;
+    if (directCandidate && (!best || directCandidate.score > best.score)) {
+      best = directCandidate;
+    }
+  }
+
   return best;
 }
 
@@ -534,7 +602,11 @@ function executeEnemyMainAction(nowMs) {
 
   const bestAttack = chooseBestEnemyAttack();
   if (bestAttack) {
-    resolveSwipeAttack(bestAttack.attacker, bestAttack.direction);
+    if (bestAttack.direction === 'direct') {
+      resolveDirectAttack(bestAttack.attacker);
+    } else {
+      resolveSwipeAttack(bestAttack.attacker, bestAttack.direction);
+    }
     gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
     return true;
   }
@@ -744,10 +816,14 @@ function onPointerUp(event) {
     const deltaX = pointerState.currentX - pointerState.startX;
     const deltaY = pointerState.currentY - pointerState.startY;
     const isHorizontalSwipe = Math.abs(deltaX) >= SWIPE_THRESHOLD && Math.abs(deltaX) > Math.abs(deltaY);
+    const isVerticalSwipe = Math.abs(deltaY) >= SWIPE_THRESHOLD && Math.abs(deltaY) > Math.abs(deltaX);
 
     if (isHorizontalSwipe) {
       const direction = deltaX < 0 ? 'left' : 'right';
       resolveSwipeAttack(card, direction);
+    } else if (isVerticalSwipe && deltaY < 0) {
+      // 上方向スワイプで相手本体へ直接攻撃
+      resolveDirectAttack(card);
     }
   }
 
@@ -794,6 +870,13 @@ function drawHudLabels() {
   ctx.fillStyle = '#b8c2d9';
   ctx.font = '13px sans-serif';
   ctx.fillText('Field cards: swipe left/right to attack adjacent enemy', 250, 40);
+  ctx.fillText('Swipe up on your field card: direct attack (uses action)', 250, 60);
+
+  ctx.fillStyle = '#f9d7d7';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText(`ENEMY HP: ${gameState.hp.enemy}`, 770, 40);
+  ctx.fillStyle = '#d7e6ff';
+  ctx.fillText(`PLAYER HP: ${gameState.hp.player}`, 770, 690);
 
   if (gameState.turn.currentPlayer) {
     ctx.fillStyle = '#ecf2ff';
@@ -1000,6 +1083,10 @@ function drawTurnBanner(nowMs) {
 }
 
 function updateTurnFlow(nowMs) {
+  if (gameState.result.winner) {
+    return;
+  }
+
   if (gameState.turn.phase === 'coin_toss' && gameState.turn.coin.active) {
     const elapsed = nowMs - gameState.turn.coin.startMs;
     if (elapsed >= gameState.turn.coin.durationMs) {
