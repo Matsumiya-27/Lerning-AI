@@ -126,3 +126,20 @@
    - Added screen shake and HP remaining pop text.
 4. KO feedback
    - HP 0 triggers stronger finish feedback (larger shake + KO flash + KO text).
+
+
+## 9. Rank System (Prototype)
+1. Card rank
+   - Cards have rank 1 / 2 / 3.
+   - Card top-left label displays rank (e.g. `RANK 2`) instead of owner text.
+2. Summon rules
+   - Rank 1: can be summoned without tribute.
+   - Rank 2: requires discarding 1 own Rank 1 field card.
+   - Rank 3: requires discarding either 2 own Rank 1 field cards, or 1 own Rank 2 field card.
+3. Generated power by rank
+   - Rank 1 total power: 5 (`left + right = 5`).
+   - Rank 2 total power: 7 (`left + right = 7`).
+   - Rank 3 total power: 10 (`left + right = 10`).
+4. AI summon compliance
+   - Enemy summon also obeys rank tribute rules and only uses legal summonable slots.
+   - Tribute summon can still be performed even when field starts full, as long as tribute cards free a legal slot.

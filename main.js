@@ -22,6 +22,7 @@ const STARTING_HAND = 4;
 const MIN_HAND_AFTER_DRAW = 4;
 const MAX_HAND = 9;
 const STARTING_HP = 10;
+const MAX_RANK = 3;
 const MAX_FIELD_SLOTS = 5;
 const TURN_BANNER_MS = 900;
 const ENEMY_AUTO_END_MS = 850;
@@ -115,11 +116,12 @@ const gameState = {
   },
 };
 
-function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight }) {
+function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight }) {
   return {
     id,
     owner,
     zone,
+    rank,
     handIndex,
     fieldSlotIndex,
     x,
@@ -142,16 +144,24 @@ function createCard({ id, owner, zone, handIndex = null, fieldSlotIndex = null, 
   };
 }
 
-function randomAttackValue() {
-  return Math.floor(Math.random() * 4) + 1;
+function randomRank() {
+  const roll = Math.random();
+  if (roll < 0.6) return 1;
+  if (roll < 0.88) return 2;
+  return 3;
 }
 
-function randomAttackPair() {
-  // 左右合計が常に5になるようにして、強さの振れ幅を抑える
-  const left = randomAttackValue();
+function getRankTotalPower(rank) {
+  if (rank === 2) return 7;
+  if (rank === 3) return 10;
+  return 5;
+}
+
+function randomAttackPair(totalPower) {
+  const left = Math.floor(Math.random() * (totalPower - 1)) + 1;
   return {
     left,
-    right: 5 - left,
+    right: totalPower - left,
   };
 }
 
@@ -159,11 +169,13 @@ function drawRandomCardToHand(owner) {
   const handCards = getHandCards(owner);
   const handIndex = handCards.length;
   const center = getHandCenter(owner, handIndex, handIndex + 1);
-  const pair = randomAttackPair();
+  const rank = randomRank();
+  const pair = randomAttackPair(getRankTotalPower(rank));
   const card = createCard({
     id: gameState.nextCardId,
     owner,
     zone: 'hand',
+    rank,
     handIndex,
     x: center.x,
     y: center.y,
@@ -266,6 +278,104 @@ function getFieldCards(owner) {
   return gameState.cards.filter((card) => card.owner === owner && card.zone === 'field' && !card.ui.pendingRemoval);
 }
 
+function getSummonTributeOptions(owner, rank) {
+  if (rank <= 1) {
+    return [[]];
+  }
+
+  const ownField = getFieldCards(owner);
+  const rank1 = ownField.filter((card) => card.rank === 1);
+  const rank2 = ownField.filter((card) => card.rank === 2);
+  const options = [];
+
+  if (rank === 2) {
+    rank1.forEach((card) => {
+      options.push([card.id]);
+    });
+    return options;
+  }
+
+  if (rank === 3) {
+    rank2.forEach((card) => {
+      options.push([card.id]);
+    });
+
+    for (let i = 0; i < rank1.length; i += 1) {
+      for (let j = i + 1; j < rank1.length; j += 1) {
+        options.push([rank1[i].id, rank1[j].id]);
+      }
+    }
+  }
+
+  return options;
+}
+
+function chooseBestTributeOption(tributeOptions) {
+  if (tributeOptions.length === 0) {
+    return null;
+  }
+
+  let best = tributeOptions[0];
+  let bestLoss = Number.POSITIVE_INFINITY;
+
+  tributeOptions.forEach((ids) => {
+    const loss = ids.reduce((sum, id) => {
+      const card = getCardById(id);
+      return sum + (card ? getRankTotalPower(card.rank) : 1000);
+    }, 0);
+    if (loss < bestLoss) {
+      bestLoss = loss;
+      best = ids;
+    }
+  });
+
+  return best;
+}
+
+function applyTributeByIds(cardIds) {
+  const nowMs = performance.now();
+  cardIds.forEach((id) => {
+    const tribute = getCardById(id);
+    if (!tribute || tribute.zone !== 'field') {
+      return;
+    }
+    markCardDestroyed(tribute, nowMs);
+  });
+}
+
+function getSummonCandidateSlots(owner, tributeIds) {
+  const tributeSet = new Set(tributeIds);
+  return slotCenters
+    .filter((slot) => {
+      if (slot.occupiedByCardId === null) {
+        return true;
+      }
+      const occupying = getCardById(slot.occupiedByCardId);
+      return !!occupying && occupying.owner === owner && tributeSet.has(occupying.id);
+    })
+    .map((slot) => slot.id);
+}
+
+function chooseBestTributeOptionForTarget(owner, tributeOptions, targetSlotId) {
+  if (tributeOptions.length === 0) {
+    return null;
+  }
+
+  const legalOptions = tributeOptions.filter((ids) => {
+    const candidateSlots = getSummonCandidateSlots(owner, ids);
+    return candidateSlots.includes(targetSlotId);
+  });
+
+  return chooseBestTributeOption(legalOptions);
+}
+
+function canSummonCard(owner, card) {
+  if (!card || card.zone !== 'hand' || card.owner !== owner) {
+    return false;
+  }
+  return getSummonTributeOptions(owner, card.rank).length > 0;
+}
+
 function hasEmptyFieldSlot() {
   return slotCenters.some((slot) => slot.occupiedByCardId === null);
 }
@@ -280,7 +390,7 @@ function hasAdjacentEnemyTarget(card) {
 }
 
 function canOwnerAct(owner) {
-  const canSummon = getHandCards(owner).length > 0 && hasEmptyFieldSlot();
+  const canSummon = hasEmptyFieldSlot() && getHandCards(owner).some((card) => canSummonCard(owner, card));
   const canAttack = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && hasAdjacentEnemyTarget(card));
   const canDirect = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn) && canDirectAttack(owner);
   return canSummon || canAttack || canDirect;
@@ -616,19 +726,28 @@ function evaluateEnemyPlacement(card, slotIndex) {
 
 function chooseBestEnemySummon() {
   const hand = getHandCards('enemy');
-  const emptySlots = getEmptySlotIndices();
-
-  if (hand.length === 0 || emptySlots.length === 0) {
+  if (hand.length === 0) {
     return null;
   }
 
   let best = null;
 
   hand.forEach((card) => {
-    emptySlots.forEach((slotIndex) => {
-      const score = evaluateEnemyPlacement(card, slotIndex);
+    const tributeOptions = getSummonTributeOptions('enemy', card.rank);
+    if (tributeOptions.length === 0) {
+      return;
+    }
+    const bestTribute = chooseBestTributeOption(tributeOptions);
+    const tributeLoss = (bestTribute ?? []).reduce((sum, id) => {
+      const tribute = getCardById(id);
+      return sum + (tribute ? getRankTotalPower(tribute.rank) : 0);
+    }, 0);
+
+    const candidateSlots = getSummonCandidateSlots('enemy', bestTribute ?? []);
+    candidateSlots.forEach((slotIndex) => {
+      const score = evaluateEnemyPlacement(card, slotIndex) + getRankTotalPower(card.rank) * 0.7 - tributeLoss * 1.4;
       if (!best || score > best.score) {
-        best = { card, slotIndex, score };
+        best = { card, slotIndex, tributeIds: bestTribute ?? [], score };
       }
     });
   });
@@ -707,12 +826,15 @@ function executeEnemyMainAction(nowMs) {
 
   const summon = chooseBestEnemySummon();
   if (summon) {
-    const { card, slotIndex } = summon;
+    const { card, slotIndex, tributeIds } = summon;
     const targetSlot = slotCenters[slotIndex];
-    if (targetSlot.occupiedByCardId !== null) {
+    const summonableSlots = getSummonCandidateSlots('enemy', tributeIds);
+    if (!summonableSlots.includes(slotIndex)) {
       return false;
     }
     gameState.interactionLock = true;
+
+    applyTributeByIds(tributeIds);
 
     startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
       card.zone = 'field';
@@ -888,21 +1010,32 @@ function onPointerUp(event) {
   if (card && pointerState.kind === 'drag') {
     card.ui.isDragging = false;
 
-    const targetSlot = slotCenters.find(
-      (slot) => pointInSlot(card.x, card.y, slot) && slot.occupiedByCardId === null,
-    );
+    const targetSlot = slotCenters.find((slot) => pointInSlot(card.x, card.y, slot));
 
     gameState.interactionLock = true;
   
     if (targetSlot) {
-      startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
-        card.zone = 'field';
-        card.handIndex = null;
-        card.fieldSlotIndex = targetSlot.id;
-        targetSlot.occupiedByCardId = card.id;
-        reflowHand('player');
-        gameState.interactionLock = false;
-            });
+      const tributeOptions = getSummonTributeOptions('player', card.rank);
+      const selectedTribute = chooseBestTributeOptionForTarget('player', tributeOptions, targetSlot.id);
+
+      if (!selectedTribute) {
+        addDamageText(card.x, card.y - 70, `RANK ${card.rank} COST`, '#ffc4c4');
+        startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
+          card.zone = 'hand';
+          gameState.interactionLock = false;
+        });
+      } else {
+        applyTributeByIds(selectedTribute);
+
+        startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
+          card.zone = 'field';
+          card.handIndex = null;
+          card.fieldSlotIndex = targetSlot.id;
+          targetSlot.occupiedByCardId = card.id;
+          reflowHand('player');
+          gameState.interactionLock = false;
+        });
+      }
     } else {
       startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
         card.zone = 'hand';
@@ -1104,7 +1237,7 @@ function drawCards(nowMs) {
     const top = centerY - height / 2;
 
     const ownerStroke = card.owner === 'player' ? '#4da3ff' : '#ff7272';
-    const ownerLabel = card.owner === 'player' ? 'PLAYER' : 'ENEMY';
+    const rankLabel = `RANK ${card.rank}`;
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -1122,7 +1255,7 @@ function drawCards(nowMs) {
 
     ctx.fillStyle = '#111111';
     ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(ownerLabel, left + 10, top + 18);
+    ctx.fillText(rankLabel, left + 10, top + 18);
 
     ctx.font = 'bold 20px sans-serif';
     ctx.fillStyle = '#174f9b';
