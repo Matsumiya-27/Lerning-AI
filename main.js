@@ -1059,6 +1059,10 @@ function pointInSlot(px, py, slot) {
   return px >= left && px <= left + CARD_WIDTH && py >= top && py <= top + CARD_HEIGHT;
 }
 
+function pointInRect(px, py, rect) {
+  return px >= rect.x && px <= rect.x + rect.width && py >= rect.y && py <= rect.y + rect.height;
+}
+
 function pointInCircle(px, py, circle) {
   const dx = px - circle.x;
   const dy = py - circle.y;
