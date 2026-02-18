@@ -26,9 +26,9 @@ const MAX_FIELD_SLOTS = 5;
 const TURN_BANNER_MS = 900;
 const ENEMY_AUTO_END_MS = 850;
 const ENEMY_ACTION_DELAY_MS = 540;
-const COIN_TOSS_MS = 1200;
-const COIN_RESULT_WOBBLE_MS = 2200;
-const FIRST_PLAYER_BANNER_MS = 1200;
+const COIN_TOSS_MS = 500;
+const COIN_RESULT_WOBBLE_MS = 500;
+const FIRST_PLAYER_BANNER_MS = 2000;
 const FIRST_PLAYER_READY_DELAY_MS = 220;
 const NO_ACTION_AUTO_END_DELAY_MS = 480;
 const DIRECT_ATTACK_HIT_MS = 190;
@@ -53,24 +53,24 @@ const slotCenters = [140, 280, 420, 560, 700].map((x, index) => ({
 }));
 
 function getHandCenter(owner, handIndex, handCount) {
-  const y = owner === 'player' ? 620 : 100;
+  const y = owner === 'player' ? 624 : 100;
   if (handCount <= 1) {
-    return { x: CANVAS_WIDTH / 2, y };
+    return { x: 450, y };
   }
 
-  // 9枚手札でも収まるよう、左右余白を固定して均等配置する
-  const minX = 140;
-  const maxX = 760;
-  const span = maxX - minX;
-  const t = handIndex / (handCount - 1);
+  // 手札は詰め気味で中央寄せ（枚数が減っても端に間延びしない）
+  const centerX = 450;
+  const gap = Math.min(104, Math.max(78, 620 / (handCount - 1)));
+  const startX = centerX - ((handCount - 1) * gap) / 2;
   return {
-    x: minX + span * t,
+    x: startX + handIndex * gap,
     y,
   };
 }
 
 // ===== 全体状態 =====
 const gameState = {
+  matchId: 0,
   cards: [],
   nextCardId: 0,
   interactionLock: false,
@@ -373,7 +373,11 @@ function endCurrentTurn(reason = 'manual') {
 
   showBanner(`${current.toUpperCase()} END`);
 
+  const matchIdAtSchedule = gameState.matchId;
   setTimeout(() => {
+    if (gameState.matchId !== matchIdAtSchedule) {
+      return;
+    }
     gameState.interactionLock = false;
     beginTurn(next, isNewRound);
   }, 220);
@@ -392,6 +396,7 @@ function startCoinToss() {
 }
 
 function resetGame() {
+  gameState.matchId += 1;
   buildInitialCards();
   gameState.interactionLock = false;
   gameState.activePointer = null;
@@ -457,6 +462,7 @@ function triggerUsedCardFeedback(card, nowMs) {
 
 function resolveSwipeAttack(attacker, direction) {
   const nowMs = performance.now();
+  const matchIdAtStart = gameState.matchId;
 
   if (gameState.turn.phase !== 'main' || gameState.interactionLock) {
     return;
@@ -501,12 +507,18 @@ function resolveSwipeAttack(attacker, direction) {
   addDamageText(defender.x, defender.y - 80, 'HIT', '#ff8a8a');
 
   setTimeout(() => {
+    if (gameState.matchId !== matchIdAtStart) {
+      return;
+    }
     const removeAt = performance.now();
     destroyedCards.forEach((card) => {
       markCardDestroyed(card, removeAt);
     });
 
     setTimeout(() => {
+      if (gameState.matchId !== matchIdAtStart) {
+        return;
+      }
       gameState.interactionLock = false;
       recomputeSlotOccupancy();
         }, DESTROY_ANIMATION_MS);
@@ -523,6 +535,7 @@ function finishGame(winner) {
 }
 
 function resolveDirectAttack(attacker) {
+  const matchIdAtStart = gameState.matchId;
   if (gameState.turn.phase !== 'main' || gameState.interactionLock || gameState.result.winner) {
     return;
   }
@@ -544,11 +557,17 @@ function resolveDirectAttack(attacker) {
   gameState.interactionLock = true;
 
   setTimeout(() => {
+    if (gameState.matchId !== matchIdAtStart) {
+      return;
+    }
     // 演出順: 中央ダメージ表示 -> HPマーカー拡大して減少を強調
     addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10, '-1', '#ff6767');
     triggerScreenShake(8, 210);
     const hpPos = getHpBadgePosition(targetOwner);
     setTimeout(() => {
+      if (gameState.matchId !== matchIdAtStart) {
+        return;
+      }
       triggerHpPulse(targetOwner, 560);
       gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - 1);
       addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
@@ -719,6 +738,23 @@ function chooseBestEnemyAttack() {
   return best;
 }
 
+function chooseAnyEnemyAttack() {
+  const attackers = getFieldCards('enemy').filter((card) => !card.combat.hasActedThisTurn);
+  for (const attacker of attackers) {
+    if (attacker.fieldSlotIndex === null) {
+      continue;
+    }
+    for (const direction of ['left', 'right']) {
+      const targetSlotIndex = direction === 'left' ? attacker.fieldSlotIndex - 1 : attacker.fieldSlotIndex + 1;
+      const defender = getCardAtSlot(targetSlotIndex);
+      if (defender && defender.owner === 'player') {
+        return { attacker, direction };
+      }
+    }
+  }
+  return null;
+}
+
 function executeEnemyMainAction(nowMs) {
   if (gameState.turn.currentPlayer !== 'enemy' || gameState.turn.phase !== 'main' || gameState.interactionLock) {
     return false;
@@ -773,6 +809,14 @@ function executeEnemyMainAction(nowMs) {
       gameState.interactionLock = false;
     });
 
+    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+    return true;
+  }
+
+  // まだ攻撃可能カードが残っている場合、最後は不利でも1回は殴る
+  const fallbackAttack = chooseAnyEnemyAttack();
+  if (fallbackAttack) {
+    resolveSwipeAttack(fallbackAttack.attacker, fallbackAttack.direction);
     gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
     return true;
   }
@@ -1250,32 +1294,44 @@ function drawCoinToss(nowMs) {
   const progress = Math.min(elapsed / gameState.turn.coin.durationMs, 1);
 
   const centerX = CANVAS_WIDTH / 2;
-  const baseY = 300;
-  let dropY = progress < 0.65 ? baseY - Math.sin(progress * Math.PI) * 40 : baseY + (progress - 0.65) * 120;
+  const launchY = 360;
+  const landingY = 430;
+  const peakHeight = 180;
 
-  let spin = progress * 10 * Math.PI;
+  // 連続な放物線（ワープ感をなくす）
+  let coinY = launchY + (landingY - launchY) * progress - peakHeight * 4 * progress * (1 - progress);
+
+  // 一方向回転（減速）
+  const eased = 1 - Math.pow(1 - progress, 2);
+  let spin = eased * Math.PI * 6;
   let tiltY = 1;
   if (!gameState.turn.coin.active) {
     const wobbleRemain = Math.max(gameState.turn.coin.revealUntilMs - nowMs, 0);
-    const wobbleRate = wobbleRemain / COIN_RESULT_WOBBLE_MS;
-    dropY = baseY + Math.sin(nowMs * 0.05) * 6 * wobbleRate;
-    spin = (gameState.turn.coin.resultFirstPlayer === 'player' ? 0 : Math.PI) + Math.sin(nowMs * 0.08) * 0.18 * wobbleRate;
-    tiltY = 1 + Math.abs(Math.sin(nowMs * 0.09)) * 0.07 * wobbleRate;
+    const wobbleRate = Math.min(Math.max(wobbleRemain / COIN_RESULT_WOBBLE_MS, 0), 1);
+    const wobble = Math.sin(nowMs * 0.045) * wobbleRate;
+    coinY = landingY + wobble * 5;
+    spin = (gameState.turn.coin.resultFirstPlayer === 'player' ? 0 : Math.PI) + wobble * 0.12;
+    tiltY = 1 + Math.abs(wobble) * 0.03;
   }
 
-  const scaleX = Math.abs(Math.cos(spin));
+  const scaleX = Math.max(0.12, Math.abs(Math.cos(spin)));
   const radius = 44;
 
-  // 影で立体感を付与
+  // 影は地面固定で大きさ/濃さのみ変化（空中影を避ける）
+  const heightRatio = Math.min(Math.max((landingY - coinY) / peakHeight, 0), 1);
+  const shadowW = 44 - heightRatio * 18;
+  const shadowH = 11 - heightRatio * 5;
+  const shadowAlpha = 0.24 - heightRatio * 0.14;
+
   ctx.save();
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillStyle = `rgba(0,0,0,${shadowAlpha.toFixed(3)})`;
   ctx.beginPath();
-  ctx.ellipse(centerX, dropY + 48, 36, 10, 0, 0, Math.PI * 2);
+  ctx.ellipse(centerX, landingY + 48, shadowW, shadowH, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
   ctx.save();
-  ctx.translate(centerX, dropY);
+  ctx.translate(centerX, coinY);
   ctx.scale(Math.max(scaleX, 0.08), tiltY);
 
   const showingWhite = Math.cos(spin) >= 0;

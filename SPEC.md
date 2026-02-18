@@ -76,11 +76,12 @@
 1. Turn order setup
    - Randomly determine first/second player at game start.
    - Coin-toss style animation is displayed before the first turn starts.
-   - After toss result, coin performs a pseudo-3D wobble reveal (~2200ms).
-   - First-player banner is shown after wobble settles; game start waits until this reveal sequence finishes.
+   - After toss result, coin performs a pseudo-3D wobble reveal (~500ms).
+   - First-player banner is shown after wobble settles; game start waits until this reveal sequence finishes (banner is kept longer for readability).
 
 2. Initial hands
    - Both player and enemy receive 4 cards at game start.
+   - Player hand is compact-centered so remaining cards do not leave a large isolated gap when cards are used.
    - Since deck is not implemented yet, cards are generated randomly.
    - Hand capacity is up to **9** cards.
 
@@ -93,6 +94,7 @@
 4. Main phase behavior
    - Player turn: can place cards and swipe-attack as before.
    - Enemy turn (prototype AI): chooses actions automatically (attack if favorable/equal-trade; otherwise summon).
+   - If attack actions remain but no favorable line exists, enemy may still perform a fallback adjacent attack to consume action.
    - If field is full and a stronger card exists in hand, enemy may remove a weaker own field card and replace it (board refresh behavior).
    - Enemy placement preference: aims to keep enemy cards alive and orient higher attack values toward adjacent player cards (edge-oriented heuristic included).
 
