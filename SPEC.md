@@ -143,10 +143,13 @@
 4. AI summon compliance
    - Enemy summon also obeys rank tribute rules and only uses legal summonable slots.
    - Tribute summon can still be performed even when field starts full, as long as tribute cards free a legal slot.
+   - Enemy avoids low-value tribute summons where tribute loss is equal to or higher than the summoned card value.
 
 5. Tribute selection UX
-   - After choosing summon destination, a tribute selection overlay opens for Rank 2/3 summons.
+   - After choosing summon destination, a tribute selection overlay opens for Rank 2/3 summons only when tribute payment is actually possible.
+   - If tribute cards are insufficient, overlay does not open and summon is rejected with immediate error feedback.
    - Background is dimmed and field cards are highlighted for selection.
+   - Summon target card is shown in a separate preview frame so field cards remain easy to inspect.
    - Player can Confirm or Cancel.
    - If destination already has own card, that card is preselected as tribute; additional required cards can be selected by click.
 

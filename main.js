@@ -429,6 +429,10 @@ function beginSummonSelection(card, targetSlotId, originalX, originalY) {
     return false;
   }
 
+  // 選択モード中は召喚カードを手札側に戻し、場カード確認を優先
+  card.x = originalX;
+  card.y = originalY;
+
   const preselectedIds = occupant ? [occupant.id] : [];
   gameState.summonSelection = {
     active: true,
@@ -447,14 +451,13 @@ function cancelSummonSelection() {
   const selection = gameState.summonSelection;
   const card = getCardById(selection.cardId);
   if (card) {
-    startMoveAnimation(card, selection.originX, selection.originY, () => {
-      card.zone = 'hand';
-      gameState.interactionLock = false;
-      gameState.summonSelection.active = false;
-    });
-    return;
+    card.zone = 'hand';
+    card.x = selection.originX;
+    card.y = selection.originY;
   }
   gameState.summonSelection.active = false;
+  gameState.summonSelection.preselectedIds = [];
+  gameState.summonSelection.selectedIds = [];
   gameState.interactionLock = false;
 }
 
@@ -477,7 +480,16 @@ function confirmSummonSelection() {
     reflowHand(card.owner);
     gameState.interactionLock = false;
     gameState.summonSelection.active = false;
+    gameState.summonSelection.preselectedIds = [];
+    gameState.summonSelection.selectedIds = [];
   });
+}
+
+function showSummonCostErrorFeedback(card) {
+  const nowMs = performance.now();
+  card.ui.shakeUntilMs = nowMs + SHAKE_DURATION_MS;
+  card.ui.crossUntilMs = nowMs + SHAKE_DURATION_MS;
+  addDamageText(card.x, card.y - 70, `RANK ${card.rank} COST`, '#ffc4c4');
 }
 
 function toggleSummonSelectionCard(cardId) {
@@ -880,9 +892,14 @@ function chooseBestEnemySummon() {
       return sum + (tribute ? getRankTotalPower(tribute.rank) : 0);
     }, 0);
 
+    const summonPower = getRankTotalPower(card.rank);
+    if (card.rank >= 2 && tributeLoss >= summonPower) {
+      return;
+    }
+
     const candidateSlots = getSummonCandidateSlots('enemy', bestTribute ?? []);
     candidateSlots.forEach((slotIndex) => {
-      const score = evaluateEnemyPlacement(card, slotIndex) + getRankTotalPower(card.rank) * 0.7 - tributeLoss * 1.4;
+      const score = evaluateEnemyPlacement(card, slotIndex) + summonPower * 0.7 - tributeLoss * 1.4;
       if (!best || score > best.score) {
         best = { card, slotIndex, tributeIds: bestTribute ?? [], score };
       }
@@ -1184,9 +1201,15 @@ function onPointerUp(event) {
     const targetSlot = slotCenters.find((slot) => pointInSlot(card.x, card.y, slot));
 
     gameState.interactionLock = true;
-  
+
     if (targetSlot) {
-      if (card.rank === 1) {
+      if (targetSlot.occupiedByCardId !== null && card.rank === 1) {
+        showSummonCostErrorFeedback(card);
+        startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
+          card.zone = 'hand';
+          gameState.interactionLock = false;
+        });
+      } else if (card.rank === 1) {
         startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
           card.zone = 'field';
           card.handIndex = null;
@@ -1196,14 +1219,18 @@ function onPointerUp(event) {
           gameState.interactionLock = false;
         });
       } else {
-      const selectionStarted = beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
-      if (!selectionStarted) {
-        addDamageText(card.x, card.y - 70, `RANK ${card.rank} COST`, '#ffc4c4');
-        startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
-          card.zone = 'hand';
-          gameState.interactionLock = false;
-        });
-      }
+        const tributeOptions = getSummonTributeOptions('player', card.rank);
+        const selected = chooseBestTributeOptionForTarget('player', tributeOptions, targetSlot.id);
+
+        if (!selected) {
+          showSummonCostErrorFeedback(card);
+          startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
+            card.zone = 'hand';
+            gameState.interactionLock = false;
+          });
+        } else {
+          beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
+        }
       }
     } else {
       startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
@@ -1358,6 +1385,9 @@ function drawSummonSelectionOverlay() {
 
   const selected = new Set([...selection.preselectedIds, ...selection.selectedIds]);
 
+  const previewX = 124;
+  const previewY = 584;
+
   ctx.save();
   ctx.fillStyle = 'rgba(8, 12, 20, 0.58)';
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -1370,6 +1400,33 @@ function drawSummonSelectionOverlay() {
     ctx.lineWidth = selected.has(card.id) ? 4 : 2;
     ctx.strokeRect(left, top, CARD_WIDTH + 10, CARD_HEIGHT + 10);
   });
+
+  // 召喚対象カードを別枠で表示して、場カード確認を邪魔しない
+  ctx.fillStyle = 'rgba(15, 22, 35, 0.92)';
+  ctx.strokeStyle = '#9fb4dc';
+  ctx.lineWidth = 2;
+  ctx.fillRect(26, 486, 196, 164);
+  ctx.strokeRect(26, 486, 196, 164);
+
+  const previewLeft = previewX - CARD_WIDTH / 2;
+  const previewTop = previewY - CARD_HEIGHT / 2;
+  const ownerStroke = summonCard.owner === 'player' ? '#4da3ff' : '#ff7272';
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = ownerStroke;
+  ctx.lineWidth = 3;
+  ctx.fillRect(previewLeft, previewTop, CARD_WIDTH, CARD_HEIGHT);
+  ctx.strokeRect(previewLeft, previewTop, CARD_WIDTH, CARD_HEIGHT);
+
+  ctx.fillStyle = '#101010';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`RANK ${summonCard.rank}`, previewLeft + 8, previewTop + 22);
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText(String(summonCard.combat.attackLeft), previewLeft + 12, previewY + 8);
+  ctx.fillText(String(summonCard.combat.attackRight), previewLeft + CARD_WIDTH - 26, previewY + 8);
+
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillStyle = '#d5e4ff';
+  ctx.fillText('SUMMON', 86, 506);
 
   const panelX = 250;
   const panelY = 522;
