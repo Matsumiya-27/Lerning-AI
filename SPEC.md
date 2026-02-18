@@ -94,8 +94,6 @@
 4. Main phase behavior
    - Player turn: can place cards and swipe-attack as before.
    - Enemy turn (prototype AI): chooses actions automatically (attack if favorable/equal-trade; otherwise summon).
-   - If attack actions remain but no favorable line exists, enemy may still perform a fallback adjacent attack to consume action.
-   - If field is full and a stronger card exists in hand, enemy may remove a weaker own field card and replace it (board refresh behavior).
    - Enemy placement preference: aims to keep enemy cards alive and orient higher attack values toward adjacent player cards (edge-oriented heuristic included).
 
 5. End turn conditions

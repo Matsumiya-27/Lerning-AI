@@ -371,8 +371,6 @@ function endCurrentTurn(reason = 'manual') {
   const next = current === 'player' ? 'enemy' : 'player';
   const isNewRound = next === gameState.turn.firstPlayer;
 
-  showBanner(`${current.toUpperCase()} END`);
-
   const matchIdAtSchedule = gameState.matchId;
   setTimeout(() => {
     if (gameState.matchId !== matchIdAtSchedule) {
@@ -638,53 +636,6 @@ function chooseBestEnemySummon() {
   return best;
 }
 
-function chooseEnemyReplacement() {
-  const hand = getHandCards('enemy');
-  const field = getFieldCards('enemy').filter((card) => card.fieldSlotIndex !== null);
-
-  if (hand.length === 0 || field.length === 0 || hasEmptyFieldSlot()) {
-    return null;
-  }
-
-  const getCardStrength = (card) => Math.max(card.combat.attackLeft, card.combat.attackRight);
-
-  let weakestField = field[0];
-  let weakestScore = getCardStrength(weakestField);
-
-  field.forEach((card) => {
-    const score = getCardStrength(card);
-    if (score < weakestScore) {
-      weakestScore = score;
-      weakestField = card;
-    }
-  });
-
-  let bestHand = hand[0];
-  let bestHandScore = getCardStrength(bestHand);
-  hand.forEach((card) => {
-    const score = getCardStrength(card);
-    if (score > bestHandScore) {
-      bestHandScore = score;
-      bestHand = card;
-    }
-  });
-
-  if (bestHandScore <= weakestScore) {
-    return null;
-  }
-
-  const slotIndex = weakestField.fieldSlotIndex;
-  if (slotIndex === null) {
-    return null;
-  }
-
-  return {
-    removeCard: weakestField,
-    summonCard: bestHand,
-    slotIndex,
-  };
-}
-
 function chooseBestEnemyAttack() {
   const attackers = getFieldCards('enemy').filter((card) => !card.combat.hasActedThisTurn);
   let best = null;
@@ -738,23 +689,6 @@ function chooseBestEnemyAttack() {
   return best;
 }
 
-function chooseAnyEnemyAttack() {
-  const attackers = getFieldCards('enemy').filter((card) => !card.combat.hasActedThisTurn);
-  for (const attacker of attackers) {
-    if (attacker.fieldSlotIndex === null) {
-      continue;
-    }
-    for (const direction of ['left', 'right']) {
-      const targetSlotIndex = direction === 'left' ? attacker.fieldSlotIndex - 1 : attacker.fieldSlotIndex + 1;
-      const defender = getCardAtSlot(targetSlotIndex);
-      if (defender && defender.owner === 'player') {
-        return { attacker, direction };
-      }
-    }
-  }
-  return null;
-}
-
 function executeEnemyMainAction(nowMs) {
   if (gameState.turn.currentPlayer !== 'enemy' || gameState.turn.phase !== 'main' || gameState.interactionLock) {
     return false;
@@ -775,6 +709,9 @@ function executeEnemyMainAction(nowMs) {
   if (summon) {
     const { card, slotIndex } = summon;
     const targetSlot = slotCenters[slotIndex];
+    if (targetSlot.occupiedByCardId !== null) {
+      return false;
+    }
     gameState.interactionLock = true;
 
     startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
@@ -786,37 +723,6 @@ function executeEnemyMainAction(nowMs) {
       gameState.interactionLock = false;
     });
 
-    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
-    return true;
-  }
-
-  const replacement = chooseEnemyReplacement();
-  if (replacement) {
-    const { removeCard, summonCard, slotIndex } = replacement;
-    const targetSlot = slotCenters[slotIndex];
-    gameState.interactionLock = true;
-
-    // より強い手札がある時は、弱い自陣カードを下げて枠を空ける
-    const removeAt = performance.now();
-    markCardDestroyed(removeCard, removeAt);
-
-    startMoveAnimation(summonCard, targetSlot.x, targetSlot.y, () => {
-      summonCard.zone = 'field';
-      summonCard.handIndex = null;
-      summonCard.fieldSlotIndex = slotIndex;
-      targetSlot.occupiedByCardId = summonCard.id;
-      reflowHand('enemy');
-      gameState.interactionLock = false;
-    });
-
-    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
-    return true;
-  }
-
-  // まだ攻撃可能カードが残っている場合、最後は不利でも1回は殴る
-  const fallbackAttack = chooseAnyEnemyAttack();
-  if (fallbackAttack) {
-    resolveSwipeAttack(fallbackAttack.attacker, fallbackAttack.direction);
     gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
     return true;
   }
