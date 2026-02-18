@@ -76,6 +76,15 @@ const gameState = {
   nextCardId: 0,
   interactionLock: false,
   activePointer: null,
+  summonSelection: {
+    active: false,
+    cardId: null,
+    targetSlotId: null,
+    originX: 0,
+    originY: 0,
+    preselectedIds: [],
+    selectedIds: [],
+  },
   result: {
     winner: null,
   },
@@ -284,12 +293,12 @@ function getSummonTributeOptions(owner, rank) {
   }
 
   const ownField = getFieldCards(owner);
-  const rank1 = ownField.filter((card) => card.rank === 1);
+  const rankAny = ownField;
   const rank2 = ownField.filter((card) => card.rank === 2);
   const options = [];
 
   if (rank === 2) {
-    rank1.forEach((card) => {
+    rankAny.forEach((card) => {
       options.push([card.id]);
     });
     return options;
@@ -300,9 +309,9 @@ function getSummonTributeOptions(owner, rank) {
       options.push([card.id]);
     });
 
-    for (let i = 0; i < rank1.length; i += 1) {
-      for (let j = i + 1; j < rank1.length; j += 1) {
-        options.push([rank1[i].id, rank1[j].id]);
+    for (let i = 0; i < rankAny.length; i += 1) {
+      for (let j = i + 1; j < rankAny.length; j += 1) {
+        options.push([rankAny[i].id, rankAny[j].id]);
       }
     }
   }
@@ -376,6 +385,129 @@ function canSummonCard(owner, card) {
   return getSummonTributeOptions(owner, card.rank).length > 0;
 }
 
+function getSlotOccupant(slotId) {
+  const slot = slotCenters[slotId];
+  if (!slot || slot.occupiedByCardId === null) {
+    return null;
+  }
+  return getCardById(slot.occupiedByCardId);
+}
+
+function getSelectedTributeCards() {
+  const ids = [...gameState.summonSelection.preselectedIds, ...gameState.summonSelection.selectedIds];
+  return ids.map((id) => getCardById(id)).filter(Boolean);
+}
+
+function canConfirmSummonSelection() {
+  const selection = gameState.summonSelection;
+  if (!selection.active) {
+    return false;
+  }
+  const card = getCardById(selection.cardId);
+  if (!card) {
+    return false;
+  }
+
+  const selectedCards = getSelectedTributeCards();
+  if (card.rank === 1) {
+    return true;
+  }
+  if (card.rank === 2) {
+    return selectedCards.length >= 1;
+  }
+
+  const hasRank2 = selectedCards.some((c) => c.rank === 2);
+  if (selection.preselectedIds.length > 0) {
+    return selectedCards.length >= 2;
+  }
+  return selectedCards.length >= 2 || hasRank2;
+}
+
+function beginSummonSelection(card, targetSlotId, originalX, originalY) {
+  const occupant = getSlotOccupant(targetSlotId);
+  if (occupant && occupant.owner !== card.owner) {
+    return false;
+  }
+
+  const preselectedIds = occupant ? [occupant.id] : [];
+  gameState.summonSelection = {
+    active: true,
+    cardId: card.id,
+    targetSlotId,
+    originX: originalX,
+    originY: originalY,
+    preselectedIds,
+    selectedIds: [],
+  };
+  gameState.interactionLock = true;
+  return true;
+}
+
+function cancelSummonSelection() {
+  const selection = gameState.summonSelection;
+  const card = getCardById(selection.cardId);
+  if (card) {
+    startMoveAnimation(card, selection.originX, selection.originY, () => {
+      card.zone = 'hand';
+      gameState.interactionLock = false;
+      gameState.summonSelection.active = false;
+    });
+    return;
+  }
+  gameState.summonSelection.active = false;
+  gameState.interactionLock = false;
+}
+
+function confirmSummonSelection() {
+  const selection = gameState.summonSelection;
+  const card = getCardById(selection.cardId);
+  const targetSlot = slotCenters[selection.targetSlotId];
+  if (!card || !targetSlot || !canConfirmSummonSelection()) {
+    return;
+  }
+
+  const allTributeIds = [...selection.preselectedIds, ...selection.selectedIds];
+  applyTributeByIds(allTributeIds);
+
+  startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
+    card.zone = 'field';
+    card.handIndex = null;
+    card.fieldSlotIndex = targetSlot.id;
+    targetSlot.occupiedByCardId = card.id;
+    reflowHand(card.owner);
+    gameState.interactionLock = false;
+    gameState.summonSelection.active = false;
+  });
+}
+
+function toggleSummonSelectionCard(cardId) {
+  const selection = gameState.summonSelection;
+  if (!selection.active) {
+    return;
+  }
+  if (selection.preselectedIds.includes(cardId)) {
+    return;
+  }
+
+  const card = getCardById(cardId);
+  const summonCard = getCardById(selection.cardId);
+  if (!card || !summonCard || card.owner !== summonCard.owner || card.zone !== 'field') {
+    return;
+  }
+
+  const idx = selection.selectedIds.indexOf(cardId);
+  if (idx >= 0) {
+    selection.selectedIds.splice(idx, 1);
+    return;
+  }
+
+  const maxSelectable = summonCard.rank === 3 && selection.preselectedIds.length === 0 ? 2 : 1;
+  if (selection.selectedIds.length >= maxSelectable) {
+    selection.selectedIds.shift();
+  }
+  selection.selectedIds.push(cardId);
+}
+
 function hasEmptyFieldSlot() {
   return slotCenters.some((slot) => slot.occupiedByCardId === null);
 }
@@ -390,7 +522,7 @@ function hasAdjacentEnemyTarget(card) {
 }
 
 function canOwnerAct(owner) {
-  const canSummon = hasEmptyFieldSlot() && getHandCards(owner).some((card) => canSummonCard(owner, card));
+  const canSummon = getHandCards(owner).some((card) => canSummonCard(owner, card));
   const canAttack = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && hasAdjacentEnemyTarget(card));
   const canDirect = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn) && canDirectAttack(owner);
   return canSummon || canAttack || canDirect;
@@ -508,6 +640,11 @@ function resetGame() {
   buildInitialCards();
   gameState.interactionLock = false;
   gameState.activePointer = null;
+  gameState.summonSelection.active = false;
+  gameState.summonSelection.cardId = null;
+  gameState.summonSelection.targetSlotId = null;
+  gameState.summonSelection.preselectedIds = [];
+  gameState.summonSelection.selectedIds = [];
   gameState.result.winner = null;
   gameState.hp.player = STARTING_HP;
   gameState.hp.enemy = STARTING_HP;
@@ -911,6 +1048,13 @@ function pointInCircle(px, py, circle) {
   return dx * dx + dy * dy <= circle.radius * circle.radius;
 }
 
+function getSummonSelectionButtons() {
+  return {
+    confirm: { x: 366, y: 590, width: 110, height: 44 },
+    cancel: { x: 488, y: 590, width: 110, height: 44 },
+  };
+}
+
 function getTopCardAtPoint(point, predicate) {
   const candidates = gameState.cards
     .filter((card) => !card.ui.pendingRemoval && predicate(card))
@@ -920,12 +1064,39 @@ function getTopCardAtPoint(point, predicate) {
 }
 
 function onPointerDown(event) {
-  if (gameState.interactionLock || gameState.activePointer !== null) {
+  if (gameState.activePointer !== null) {
     return;
   }
 
   event.preventDefault();
   const point = getCanvasPoint(event);
+
+  if (gameState.summonSelection.active) {
+    const { confirm, cancel } = getSummonSelectionButtons();
+    if (pointInRect(point.x, point.y, cancel)) {
+      cancelSummonSelection();
+      return;
+    }
+    if (pointInRect(point.x, point.y, confirm)) {
+      if (canConfirmSummonSelection()) {
+        confirmSummonSelection();
+      }
+      return;
+    }
+
+    const selectable = getTopCardAtPoint(
+      point,
+      (card) => card.zone === 'field' && card.owner === 'player' && !card.ui.pendingRemoval,
+    );
+    if (selectable) {
+      toggleSummonSelectionCard(selectable.id);
+    }
+    return;
+  }
+
+  if (gameState.interactionLock) {
+    return;
+  }
 
   // Canvas内のEnd Turnボタン（右中央）
   if (pointInCircle(point.x, point.y, END_TURN_UI) && canUseEndTurnButton()) {
@@ -1015,24 +1186,11 @@ function onPointerUp(event) {
     gameState.interactionLock = true;
   
     if (targetSlot) {
-      const tributeOptions = getSummonTributeOptions('player', card.rank);
-      const selectedTribute = chooseBestTributeOptionForTarget('player', tributeOptions, targetSlot.id);
-
-      if (!selectedTribute) {
+      const selectionStarted = beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
+      if (!selectionStarted) {
         addDamageText(card.x, card.y - 70, `RANK ${card.rank} COST`, '#ffc4c4');
         startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
           card.zone = 'hand';
-          gameState.interactionLock = false;
-        });
-      } else {
-        applyTributeByIds(selectedTribute);
-
-        startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
-          card.zone = 'field';
-          card.handIndex = null;
-          card.fieldSlotIndex = targetSlot.id;
-          targetSlot.occupiedByCardId = card.id;
-          reflowHand('player');
           gameState.interactionLock = false;
         });
       }
@@ -1176,6 +1334,83 @@ function drawDamageTexts(nowMs) {
   });
 }
 
+function drawSummonSelectionOverlay() {
+  if (!gameState.summonSelection.active) {
+    return;
+  }
+
+  const selection = gameState.summonSelection;
+  const summonCard = getCardById(selection.cardId);
+  if (!summonCard) {
+    return;
+  }
+
+  const selected = new Set([...selection.preselectedIds, ...selection.selectedIds]);
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 12, 20, 0.58)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // 生贄候補の明示
+  getFieldCards('player').forEach((card) => {
+    const left = card.x - CARD_WIDTH / 2 - 5;
+    const top = card.y - CARD_HEIGHT / 2 - 5;
+    ctx.strokeStyle = selected.has(card.id) ? '#ffd470' : 'rgba(230,240,255,0.55)';
+    ctx.lineWidth = selected.has(card.id) ? 4 : 2;
+    ctx.strokeRect(left, top, CARD_WIDTH + 10, CARD_HEIGHT + 10);
+  });
+
+  const panelX = 250;
+  const panelY = 522;
+  const panelW = 460;
+  const panelH = 122;
+  ctx.fillStyle = 'rgba(18, 26, 41, 0.9)';
+  ctx.strokeStyle = '#9fb4dc';
+  ctx.lineWidth = 2;
+  ctx.fillRect(panelX, panelY, panelW, panelH);
+  ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+  ctx.fillStyle = '#eaf1ff';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.fillText(`RANK ${summonCard.rank} 召喚コストを選択`, panelX + 16, panelY + 28);
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#d8e0f5';
+  if (summonCard.rank === 2) {
+    ctx.fillText('場のカードを1枚選択（出し先にカードがある場合は自動で選択済み）', panelX + 16, panelY + 50);
+  } else {
+    ctx.fillText('場のカード2枚、またはランク2を1枚選択（出し先カードは自動選択）', panelX + 16, panelY + 50);
+  }
+
+  const selectedCards = getSelectedTributeCards();
+  const hasRank2 = selectedCards.some((c) => c.rank === 2);
+  ctx.fillText(
+    `選択中: ${selectedCards.length}枚${hasRank2 ? ' (Rank2含む)' : ''}`,
+    panelX + 16,
+    panelY + 72,
+  );
+
+  const { confirm, cancel } = getSummonSelectionButtons();
+  const canConfirm = canConfirmSummonSelection();
+
+  ctx.fillStyle = canConfirm ? '#274a7f' : '#2a3448';
+  ctx.strokeStyle = canConfirm ? '#7db5ff' : '#627291';
+  ctx.lineWidth = 2;
+  ctx.fillRect(confirm.x, confirm.y, confirm.width, confirm.height);
+  ctx.strokeRect(confirm.x, confirm.y, confirm.width, confirm.height);
+  ctx.fillStyle = canConfirm ? '#edf4ff' : '#9eaac2';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('Confirm', confirm.x + 22, confirm.y + 28);
+
+  ctx.fillStyle = '#4a2a33';
+  ctx.strokeStyle = '#c18595';
+  ctx.fillRect(cancel.x, cancel.y, cancel.width, cancel.height);
+  ctx.strokeRect(cancel.x, cancel.y, cancel.width, cancel.height);
+  ctx.fillStyle = '#ffe5ea';
+  ctx.fillText('Cancel', cancel.x + 28, cancel.y + 28);
+
+  ctx.restore();
+}
+
 function drawEnemyHandPlaceholders() {
   const enemyHands = getHandCards('enemy').sort((a, b) => (a.handIndex ?? 0) - (b.handIndex ?? 0));
   enemyHands.forEach((card) => {
@@ -1213,11 +1448,6 @@ function drawCards(nowMs) {
   });
 
   orderedCards.forEach((card) => {
-    // 敵手札は裏向き表示にする
-    if (card.owner === 'enemy' && card.zone === 'hand') {
-      return;
-    }
-
     const isShaking = nowMs < card.ui.shakeUntilMs;
     const shakeX = isShaking ? Math.sin(nowMs * 0.07) * 5 : 0;
 
@@ -1486,7 +1716,6 @@ function draw(nowMs) {
   ctx.save();
   ctx.translate(shakeX, shakeY);
   drawTable();
-  drawEnemyHandPlaceholders();
   drawCards(nowMs);
   const enemyHpPos = getHpBadgePosition('enemy');
   const playerHpPos = getHpBadgePosition('player');
@@ -1497,6 +1726,7 @@ function draw(nowMs) {
   drawCanvasEndTurnButton();
   drawCoinToss(nowMs);
   drawTurnBanner(nowMs);
+  drawSummonSelectionOverlay();
 
   if (nowMs < gameState.fx.koFlashUntilMs) {
     const remain = gameState.fx.koFlashUntilMs - nowMs;

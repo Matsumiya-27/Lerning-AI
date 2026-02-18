@@ -134,8 +134,8 @@
    - Card top-left label displays rank (e.g. `RANK 2`) instead of owner text.
 2. Summon rules
    - Rank 1: can be summoned without tribute.
-   - Rank 2: requires discarding 1 own Rank 1 field card.
-   - Rank 3: requires discarding either 2 own Rank 1 field cards, or 1 own Rank 2 field card.
+   - Rank 2: requires discarding 1 own field card (any rank).
+   - Rank 3: requires discarding either 2 own field cards (any rank), or 1 own Rank 2 field card.
 3. Generated power by rank
    - Rank 1 total power: 5 (`left + right = 5`).
    - Rank 2 total power: 7 (`left + right = 7`).
@@ -143,3 +143,12 @@
 4. AI summon compliance
    - Enemy summon also obeys rank tribute rules and only uses legal summonable slots.
    - Tribute summon can still be performed even when field starts full, as long as tribute cards free a legal slot.
+
+5. Tribute selection UX
+   - After choosing summon destination, a tribute selection overlay opens for Rank 2/3 summons.
+   - Background is dimmed and field cards are highlighted for selection.
+   - Player can Confirm or Cancel.
+   - If destination already has own card, that card is preselected as tribute; additional required cards can be selected by click.
+
+6. Debug visibility
+   - Enemy hand cards are rendered face-up temporarily for debugging.
