@@ -76,7 +76,8 @@
 1. Turn order setup
    - Randomly determine first/second player at game start.
    - Coin-toss style animation is displayed before the first turn starts.
-   - After toss result, coin performs a short wobble reveal and first-player banner is shown.
+   - After toss result, coin performs a pseudo-3D wobble reveal (~2200ms).
+   - First-player banner is shown after wobble settles; game start waits until this reveal sequence finishes.
 
 2. Initial hands
    - Both player and enemy receive 4 cards at game start.
@@ -92,7 +93,7 @@
 4. Main phase behavior
    - Player turn: can place cards and swipe-attack as before.
    - Enemy turn (prototype AI): chooses actions automatically (attack if favorable/equal-trade; otherwise summon).
-   - If field is full and a stronger card exists in hand, enemy may remove a weaker own field card and replace it.
+   - If field is full and a stronger card exists in hand, enemy may remove a weaker own field card and replace it (board refresh behavior).
    - Enemy placement preference: aims to keep enemy cards alive and orient higher attack values toward adjacent player cards (edge-oriented heuristic included).
 
 5. End turn conditions
@@ -118,7 +119,10 @@
    - Removed textual area labels such as EnemyHand / Field / YourHand helper captions.
    - Turn information is integrated into the in-canvas END TURN button (player: Turn + End, enemy: Turn + Enemy).
 2. HP visualization
-   - HP is shown as prominent circular badges (enemy: top-right edge, player: bottom-left edge).
+   - HP is shown as prominent circular badges (enemy: top-right edge, player: bottom-left edge), avoiding overlap with cards.
    - HP color changes by remaining ratio: green -> yellow -> red.
 3. Attack feedback
-   - Added screen shake, floating damage text, and HP remaining pop text.
+   - On direct damage: center damage text -> HP badge briefly enlarges while HP decreases -> badge returns to normal.
+   - Added screen shake and HP remaining pop text.
+4. KO feedback
+   - HP 0 triggers stronger finish feedback (larger shake + KO flash + KO text).

@@ -29,11 +29,12 @@ const ENEMY_ACTION_DELAY_MS = 540;
 const COIN_TOSS_MS = 1200;
 const COIN_RESULT_WOBBLE_MS = 2200;
 const FIRST_PLAYER_BANNER_MS = 1200;
+const FIRST_PLAYER_READY_DELAY_MS = 220;
 const NO_ACTION_AUTO_END_DELAY_MS = 480;
 const DIRECT_ATTACK_HIT_MS = 190;
 
 const END_TURN_UI = {
-  x: 900,
+  x: 878,
   y: 360,
   radius: 48,
 };
@@ -44,7 +45,7 @@ const ctx = canvas.getContext('2d');
 const resetButton = document.getElementById('resetButton');
 
 // ===== レイアウト =====
-const slotCenters = [180, 330, 480, 630, 780].map((x, index) => ({
+const slotCenters = [140, 280, 420, 560, 700].map((x, index) => ({
   id: index,
   x,
   y: 360,
@@ -58,8 +59,8 @@ function getHandCenter(owner, handIndex, handCount) {
   }
 
   // 9枚手札でも収まるよう、左右余白を固定して均等配置する
-  const minX = 120;
-  const maxX = 840;
+  const minX = 140;
+  const maxX = 760;
   const span = maxX - minX;
   const t = handIndex / (handCount - 1);
   return {
@@ -81,6 +82,12 @@ const gameState = {
     screenShakeUntilMs: 0,
     screenShakePower: 0,
     damageTexts: [],
+    hpPulse: {
+      owner: null,
+      startMs: 0,
+      untilMs: 0,
+    },
+    koFlashUntilMs: 0,
   },
   hp: {
     player: STARTING_HP,
@@ -99,6 +106,8 @@ const gameState = {
       durationMs: COIN_TOSS_MS,
       resultFirstPlayer: null,
       revealUntilMs: 0,
+      firstShownAtMs: 0,
+      firstShownDone: false,
     },
     enemyAutoEndAtMs: 0,
     enemyNextActionAtMs: 0,
@@ -203,6 +212,13 @@ function addDamageText(x, y, text, color = '#ff6b6b') {
     startMs: nowMs,
     untilMs: nowMs + 760,
   });
+}
+
+function triggerHpPulse(owner, durationMs = 520) {
+  const nowMs = performance.now();
+  gameState.fx.hpPulse.owner = owner;
+  gameState.fx.hpPulse.startMs = nowMs;
+  gameState.fx.hpPulse.untilMs = nowMs + durationMs;
 }
 
 function recomputeSlotOccupancy() {
@@ -370,6 +386,8 @@ function startCoinToss() {
   gameState.turn.coin.startMs = nowMs;
   gameState.turn.coin.resultFirstPlayer = Math.random() < 0.5 ? 'player' : 'enemy';
   gameState.turn.coin.revealUntilMs = 0;
+  gameState.turn.coin.firstShownAtMs = 0;
+  gameState.turn.coin.firstShownDone = false;
   gameState.interactionLock = true;
 }
 
@@ -391,6 +409,8 @@ function resetGame() {
   gameState.turn.enemyNextActionAtMs = 0;
   gameState.turn.mainPhaseStartedAtMs = 0;
   gameState.turn.coin.revealUntilMs = 0;
+  gameState.turn.coin.firstShownAtMs = 0;
+  gameState.turn.coin.firstShownDone = false;
   gameState.fx.screenShakeUntilMs = 0;
   gameState.fx.screenShakePower = 0;
   gameState.fx.damageTexts = [];
@@ -496,6 +516,9 @@ function resolveSwipeAttack(attacker, direction) {
 function finishGame(winner) {
   gameState.result.winner = winner;
   gameState.interactionLock = true;
+  gameState.fx.koFlashUntilMs = performance.now() + 900;
+  triggerScreenShake(14, 500);
+  addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2, 'K.O.', '#ff4d4d');
   showBanner(`${winner.toUpperCase()} WIN`, 1800);
 }
 
@@ -521,16 +544,20 @@ function resolveDirectAttack(attacker) {
   gameState.interactionLock = true;
 
   setTimeout(() => {
-    gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - 1);
+    // 演出順: 中央ダメージ表示 -> HPマーカー拡大して減少を強調
+    addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10, '-1', '#ff6767');
     triggerScreenShake(8, 210);
     const hpPos = getHpBadgePosition(targetOwner);
-    addDamageText(hpPos.x, hpPos.y - 42, '-1', '#ff5252');
-    addDamageText(hpPos.x, hpPos.y + 52, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
-    if (gameState.hp[targetOwner] <= 0) {
-      finishGame(attacker.owner);
-      return;
-    }
-    gameState.interactionLock = false;
+    setTimeout(() => {
+      triggerHpPulse(targetOwner, 560);
+      gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - 1);
+      addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
+      if (gameState.hp[targetOwner] <= 0) {
+        finishGame(attacker.owner);
+        return;
+      }
+      gameState.interactionLock = false;
+    }, 110);
   }, DIRECT_ATTACK_HIT_MS);
 }
 
@@ -1000,8 +1027,18 @@ function getHpColor(hp) {
 function drawHpBadge(owner, x, y) {
   const hp = gameState.hp[owner];
   const { fill, stroke, text } = getHpColor(hp);
+  const nowMs = performance.now();
+  let scale = 1;
+  if (gameState.fx.hpPulse.owner === owner && nowMs < gameState.fx.hpPulse.untilMs) {
+    const t = (nowMs - gameState.fx.hpPulse.startMs) / (gameState.fx.hpPulse.untilMs - gameState.fx.hpPulse.startMs);
+    const pulse = Math.sin(Math.min(Math.max(t, 0), 1) * Math.PI);
+    scale = 1 + pulse * 0.32;
+  }
 
   ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  ctx.translate(-x, -y);
   ctx.fillStyle = fill;
   ctx.strokeStyle = stroke;
   ctx.lineWidth = 3;
@@ -1217,19 +1254,29 @@ function drawCoinToss(nowMs) {
   let dropY = progress < 0.65 ? baseY - Math.sin(progress * Math.PI) * 40 : baseY + (progress - 0.65) * 120;
 
   let spin = progress * 10 * Math.PI;
+  let tiltY = 1;
   if (!gameState.turn.coin.active) {
     const wobbleRemain = Math.max(gameState.turn.coin.revealUntilMs - nowMs, 0);
     const wobbleRate = wobbleRemain / COIN_RESULT_WOBBLE_MS;
     dropY = baseY + Math.sin(nowMs * 0.05) * 6 * wobbleRate;
     spin = (gameState.turn.coin.resultFirstPlayer === 'player' ? 0 : Math.PI) + Math.sin(nowMs * 0.08) * 0.18 * wobbleRate;
+    tiltY = 1 + Math.abs(Math.sin(nowMs * 0.09)) * 0.07 * wobbleRate;
   }
 
   const scaleX = Math.abs(Math.cos(spin));
   const radius = 44;
 
+  // 影で立体感を付与
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(centerX, dropY + 48, 36, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
   ctx.save();
   ctx.translate(centerX, dropY);
-  ctx.scale(Math.max(scaleX, 0.08), 1);
+  ctx.scale(Math.max(scaleX, 0.08), tiltY);
 
   const showingWhite = Math.cos(spin) >= 0;
   ctx.fillStyle = showingWhite ? '#efefef' : '#1e1e1e';
@@ -1274,16 +1321,32 @@ function updateTurnFlow(nowMs) {
     return;
   }
 
-  if (gameState.turn.phase === 'coin_toss' && gameState.turn.coin.active) {
+  if (gameState.turn.phase === 'coin_toss') {
+    if (!gameState.turn.coin.active && !gameState.turn.coin.firstShownDone) {
+      if (nowMs >= gameState.turn.coin.revealUntilMs) {
+        const firstLabel = gameState.turn.firstPlayer === 'player' ? 'あなたの先攻' : '相手の先攻';
+        showBanner(firstLabel, FIRST_PLAYER_BANNER_MS);
+        gameState.turn.coin.firstShownAtMs = nowMs;
+        gameState.turn.coin.firstShownDone = true;
+      }
+      return;
+    }
+
+    if (!gameState.turn.coin.active && gameState.turn.coin.firstShownDone) {
+      if (nowMs >= gameState.turn.coin.firstShownAtMs + FIRST_PLAYER_BANNER_MS + FIRST_PLAYER_READY_DELAY_MS) {
+        gameState.interactionLock = false;
+        beginTurn(gameState.turn.firstPlayer, false);
+      }
+      return;
+    }
+
     const elapsed = nowMs - gameState.turn.coin.startMs;
     if (elapsed >= gameState.turn.coin.durationMs) {
       gameState.turn.coin.active = false;
       gameState.turn.firstPlayer = gameState.turn.coin.resultFirstPlayer;
       gameState.turn.coin.revealUntilMs = nowMs + COIN_RESULT_WOBBLE_MS;
-      gameState.interactionLock = false;
-      beginTurn(gameState.turn.firstPlayer, false);
-      const firstLabel = gameState.turn.firstPlayer === 'player' ? 'あなたの先攻' : '相手の先攻';
-      showBanner(firstLabel, FIRST_PLAYER_BANNER_MS);
+      gameState.turn.coin.firstShownDone = false;
+      gameState.turn.coin.firstShownAtMs = 0;
     }
     return;
   }
@@ -1339,6 +1402,13 @@ function draw(nowMs) {
   drawCanvasEndTurnButton();
   drawCoinToss(nowMs);
   drawTurnBanner(nowMs);
+
+  if (nowMs < gameState.fx.koFlashUntilMs) {
+    const remain = gameState.fx.koFlashUntilMs - nowMs;
+    const alpha = Math.min(remain / 900, 1) * 0.55;
+    ctx.fillStyle = `rgba(255,70,70,${alpha})`;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  }
   ctx.restore();
 }
 
