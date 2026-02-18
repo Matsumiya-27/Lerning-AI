@@ -1186,6 +1186,16 @@ function onPointerUp(event) {
     gameState.interactionLock = true;
   
     if (targetSlot) {
+      if (card.rank === 1) {
+        startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
+          card.zone = 'field';
+          card.handIndex = null;
+          card.fieldSlotIndex = targetSlot.id;
+          targetSlot.occupiedByCardId = card.id;
+          reflowHand('player');
+          gameState.interactionLock = false;
+        });
+      } else {
       const selectionStarted = beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
       if (!selectionStarted) {
         addDamageText(card.x, card.y - 70, `RANK ${card.rank} COST`, '#ffc4c4');
@@ -1193,6 +1203,7 @@ function onPointerUp(event) {
           card.zone = 'hand';
           gameState.interactionLock = false;
         });
+      }
       }
     } else {
       startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
