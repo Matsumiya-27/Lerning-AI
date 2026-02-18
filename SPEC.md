@@ -75,6 +75,7 @@
 1. Turn order setup
    - Randomly determine first/second player at game start.
    - Coin-toss style animation is displayed before the first turn starts.
+   - After toss result, coin performs a short wobble reveal and first-player banner is shown.
 
 2. Initial hands
    - Both player and enemy receive 4 cards at game start.
@@ -89,7 +90,7 @@
 
 4. Main phase behavior
    - Player turn: can place cards and swipe-attack as before.
-   - Enemy turn (prototype AI): chooses actions automatically (attack if favorable; otherwise summon).
+   - Enemy turn (prototype AI): chooses actions automatically (attack if favorable/equal-trade; otherwise summon).
    - Enemy placement preference: aims to keep enemy cards alive and orient higher attack values toward adjacent player cards (edge-oriented heuristic included).
 
 5. End turn conditions
@@ -108,3 +109,13 @@
    - The first player cannot perform direct attack on turn 1.
 4. Win condition
    - If a side's HP reaches 0, the opponent wins immediately.
+
+
+## 8. Presentation Update (Prototype)
+1. HUD labels cleanup
+   - Removed textual area labels such as EnemyHand / Field / YourHand helper captions.
+2. HP visualization
+   - HP is shown as prominent circular badges.
+   - HP color changes by remaining ratio: green -> yellow -> red.
+3. Attack feedback
+   - Added screen shake, floating damage text, and HP remaining pop text.

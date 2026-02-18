@@ -27,6 +27,8 @@ const TURN_BANNER_MS = 900;
 const ENEMY_AUTO_END_MS = 850;
 const ENEMY_ACTION_DELAY_MS = 540;
 const COIN_TOSS_MS = 1200;
+const COIN_RESULT_WOBBLE_MS = 2200;
+const FIRST_PLAYER_BANNER_MS = 1200;
 const NO_ACTION_AUTO_END_DELAY_MS = 480;
 const DIRECT_ATTACK_HIT_MS = 190;
 
@@ -75,6 +77,11 @@ const gameState = {
   result: {
     winner: null,
   },
+  fx: {
+    screenShakeUntilMs: 0,
+    screenShakePower: 0,
+    damageTexts: [],
+  },
   hp: {
     player: STARTING_HP,
     enemy: STARTING_HP,
@@ -91,6 +98,7 @@ const gameState = {
       startMs: 0,
       durationMs: COIN_TOSS_MS,
       resultFirstPlayer: null,
+      revealUntilMs: 0,
     },
     enemyAutoEndAtMs: 0,
     enemyNextActionAtMs: 0,
@@ -167,6 +175,24 @@ function buildInitialCards() {
 function showBanner(text, durationMs = TURN_BANNER_MS) {
   gameState.turn.bannerText = text;
   gameState.turn.bannerUntilMs = performance.now() + durationMs;
+}
+
+function triggerScreenShake(power = 5, durationMs = 170) {
+  const nowMs = performance.now();
+  gameState.fx.screenShakeUntilMs = Math.max(gameState.fx.screenShakeUntilMs, nowMs + durationMs);
+  gameState.fx.screenShakePower = Math.max(gameState.fx.screenShakePower, power);
+}
+
+function addDamageText(x, y, text, color = '#ff6b6b') {
+  const nowMs = performance.now();
+  gameState.fx.damageTexts.push({
+    x,
+    y,
+    text,
+    color,
+    startMs: nowMs,
+    untilMs: nowMs + 760,
+  });
 }
 
 function recomputeSlotOccupancy() {
@@ -333,6 +359,7 @@ function startCoinToss() {
   gameState.turn.coin.active = true;
   gameState.turn.coin.startMs = nowMs;
   gameState.turn.coin.resultFirstPlayer = Math.random() < 0.5 ? 'player' : 'enemy';
+  gameState.turn.coin.revealUntilMs = 0;
   gameState.interactionLock = true;
 }
 
@@ -353,6 +380,10 @@ function resetGame() {
   gameState.turn.enemyAutoEndAtMs = 0;
   gameState.turn.enemyNextActionAtMs = 0;
   gameState.turn.mainPhaseStartedAtMs = 0;
+  gameState.turn.coin.revealUntilMs = 0;
+  gameState.fx.screenShakeUntilMs = 0;
+  gameState.fx.screenShakePower = 0;
+  gameState.fx.damageTexts = [];
 
   startCoinToss();
 }
@@ -436,6 +467,8 @@ function resolveSwipeAttack(attacker, direction) {
 
   attacker.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
   defender.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+  triggerScreenShake(6, 170);
+  addDamageText(defender.x, defender.y - 80, 'HIT', '#ff8a8a');
 
   setTimeout(() => {
     const removeAt = performance.now();
@@ -479,6 +512,10 @@ function resolveDirectAttack(attacker) {
 
   setTimeout(() => {
     gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - 1);
+    triggerScreenShake(8, 210);
+    const hpBadgeY = targetOwner === 'enemy' ? 90 : 630;
+    addDamageText(860, hpBadgeY - 38, '-1', '#ff5252');
+    addDamageText(860, hpBadgeY + 48, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
     if (gameState.hp[targetOwner] <= 0) {
       finishGame(attacker.owner);
       return;
@@ -569,7 +606,8 @@ function chooseBestEnemyAttack() {
       if (attackerPower > defenderPower) {
         score = 50 + (attackerPower - defenderPower) * 4;
       } else if (attackerPower === defenderPower) {
-        score = 6;
+        // 相打ちも許容して盤面整理を進める
+        score = 22 + Math.max(0, getHandCards('enemy').length - 4) * 2;
       } else {
         score = -40 - (defenderPower - attackerPower) * 4;
       }
@@ -586,7 +624,9 @@ function chooseBestEnemyAttack() {
   }
 
   if (canDirectAttack('enemy')) {
-    const directCandidate = attackers[0] ? { attacker: attackers[0], direction: 'direct', score: 18 + (STARTING_HP - gameState.hp.player) } : null;
+    const directCandidate = attackers[0]
+      ? { attacker: attackers[0], direction: 'direct', score: 12 + (STARTING_HP - gameState.hp.player) }
+      : null;
     if (directCandidate && (!best || directCandidate.score > best.score)) {
       best = directCandidate;
     }
@@ -662,6 +702,8 @@ function updateAnimations(nowMs) {
     }
     return nowMs < card.ui.destroyUntilMs;
   });
+
+  gameState.fx.damageTexts = gameState.fx.damageTexts.filter((fx) => nowMs < fx.untilMs);
 }
 
 function getCanvasPoint(event) {
@@ -861,29 +903,75 @@ function drawTable() {
 }
 
 function drawHudLabels() {
-  ctx.fillStyle = '#d6e0f4';
-  ctx.font = '16px sans-serif';
-  ctx.fillText(`ENEMY HAND (${getHandCards('enemy').length}/${MAX_HAND})`, 20, 40);
-  ctx.fillText('FIELD (max 5)', 20, 360 - CARD_HEIGHT / 2 - 20);
-  ctx.fillText(`YOUR HAND (${getHandCards('player').length}/${MAX_HAND})`, 20, 690);
-
-  ctx.fillStyle = '#b8c2d9';
-  ctx.font = '13px sans-serif';
-  ctx.fillText('Field cards: swipe left/right to attack adjacent enemy', 250, 40);
-  ctx.fillText('Swipe up on your field card: direct attack (uses action)', 250, 60);
-
-  ctx.fillStyle = '#f9d7d7';
-  ctx.font = 'bold 16px sans-serif';
-  ctx.fillText(`ENEMY HP: ${gameState.hp.enemy}`, 770, 40);
-  ctx.fillStyle = '#d7e6ff';
-  ctx.fillText(`PLAYER HP: ${gameState.hp.player}`, 770, 690);
-
   if (gameState.turn.currentPlayer) {
     ctx.fillStyle = '#ecf2ff';
     ctx.font = 'bold 15px sans-serif';
     const turnText = `Turn ${gameState.turn.number} - ${gameState.turn.currentPlayer.toUpperCase()} (${gameState.turn.phase})`;
     ctx.fillText(turnText, 20, 78);
   }
+}
+
+function getHpColor(hp) {
+  const ratio = hp / STARTING_HP;
+  if (ratio <= 0.3) {
+    return { fill: '#7a1f1f', stroke: '#ff5959', text: '#ffd7d7' };
+  }
+  if (ratio <= 0.6) {
+    return { fill: '#6f6220', stroke: '#ffd24a', text: '#fff2bf' };
+  }
+  return { fill: '#1f6d32', stroke: '#6de38c', text: '#dbffe6' };
+}
+
+function drawHpBadge(owner, x, y) {
+  const hp = gameState.hp[owner];
+  const { fill, stroke, text } = getHpColor(hp);
+
+  ctx.save();
+  ctx.fillStyle = fill;
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, 34, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(x, y, 26, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = text;
+  ctx.font = 'bold 28px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(hp), x, y);
+
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = owner === 'enemy' ? '#ffd5d5' : '#d7e7ff';
+  ctx.fillText(owner === 'enemy' ? 'ENEMY' : 'YOU', x, y + 49);
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+function drawDamageTexts(nowMs) {
+  gameState.fx.damageTexts.forEach((fx) => {
+    const t = (nowMs - fx.startMs) / (fx.untilMs - fx.startMs);
+    const progress = Math.min(Math.max(t, 0), 1);
+    const alpha = 1 - progress;
+    const y = fx.y - progress * 26;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = fx.color;
+    ctx.font = 'bold 24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(fx.text, fx.x, y);
+    ctx.textAlign = 'left';
+    ctx.restore();
+  });
 }
 
 function drawEnemyHandPlaceholders() {
@@ -1025,7 +1113,7 @@ function drawCanvasEndTurnButton() {
 }
 
 function drawCoinToss(nowMs) {
-  if (!gameState.turn.coin.active) {
+  if (!gameState.turn.coin.active && nowMs > gameState.turn.coin.revealUntilMs) {
     return;
   }
 
@@ -1034,9 +1122,16 @@ function drawCoinToss(nowMs) {
 
   const centerX = CANVAS_WIDTH / 2;
   const baseY = 300;
-  const dropY = progress < 0.65 ? baseY - Math.sin(progress * Math.PI) * 40 : baseY + (progress - 0.65) * 120;
+  let dropY = progress < 0.65 ? baseY - Math.sin(progress * Math.PI) * 40 : baseY + (progress - 0.65) * 120;
 
-  const spin = progress * 10 * Math.PI;
+  let spin = progress * 10 * Math.PI;
+  if (!gameState.turn.coin.active) {
+    const wobbleRemain = Math.max(gameState.turn.coin.revealUntilMs - nowMs, 0);
+    const wobbleRate = wobbleRemain / COIN_RESULT_WOBBLE_MS;
+    dropY = baseY + Math.sin(nowMs * 0.05) * 6 * wobbleRate;
+    spin = (gameState.turn.coin.resultFirstPlayer === 'player' ? 0 : Math.PI) + Math.sin(nowMs * 0.08) * 0.18 * wobbleRate;
+  }
+
   const scaleX = Math.abs(Math.cos(spin));
   const radius = 44;
 
@@ -1092,8 +1187,11 @@ function updateTurnFlow(nowMs) {
     if (elapsed >= gameState.turn.coin.durationMs) {
       gameState.turn.coin.active = false;
       gameState.turn.firstPlayer = gameState.turn.coin.resultFirstPlayer;
+      gameState.turn.coin.revealUntilMs = nowMs + COIN_RESULT_WOBBLE_MS;
       gameState.interactionLock = false;
       beginTurn(gameState.turn.firstPlayer, false);
+      const firstLabel = gameState.turn.firstPlayer === 'player' ? 'あなたの先攻' : '相手の先攻';
+      showBanner(firstLabel, FIRST_PLAYER_BANNER_MS);
     }
     return;
   }
@@ -1127,13 +1225,27 @@ function updateTurnFlow(nowMs) {
 }
 
 function draw(nowMs) {
+  let shakeX = 0;
+  let shakeY = 0;
+  if (nowMs < gameState.fx.screenShakeUntilMs) {
+    const power = gameState.fx.screenShakePower;
+    shakeX = (Math.random() * 2 - 1) * power;
+    shakeY = (Math.random() * 2 - 1) * power * 0.7;
+  }
+
+  ctx.save();
+  ctx.translate(shakeX, shakeY);
   drawTable();
   drawEnemyHandPlaceholders();
   drawCards(nowMs);
+  drawHpBadge('enemy', 860, 90);
+  drawHpBadge('player', 860, 630);
+  drawDamageTexts(nowMs);
   drawHudLabels();
   drawCanvasEndTurnButton();
   drawCoinToss(nowMs);
   drawTurnBanner(nowMs);
+  ctx.restore();
 }
 
 function loop(nowMs) {
