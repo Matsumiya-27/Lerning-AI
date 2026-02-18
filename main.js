@@ -343,6 +343,32 @@ function applyTributeByIds(cardIds) {
   });
 }
 
+function getSummonCandidateSlots(owner, tributeIds) {
+  const tributeSet = new Set(tributeIds);
+  return slotCenters
+    .filter((slot) => {
+      if (slot.occupiedByCardId === null) {
+        return true;
+      }
+      const occupying = getCardById(slot.occupiedByCardId);
+      return !!occupying && occupying.owner === owner && tributeSet.has(occupying.id);
+    })
+    .map((slot) => slot.id);
+}
+
+function chooseBestTributeOptionForTarget(owner, tributeOptions, targetSlotId) {
+  if (tributeOptions.length === 0) {
+    return null;
+  }
+
+  const legalOptions = tributeOptions.filter((ids) => {
+    const candidateSlots = getSummonCandidateSlots(owner, ids);
+    return candidateSlots.includes(targetSlotId);
+  });
+
+  return chooseBestTributeOption(legalOptions);
+}
+
 function canSummonCard(owner, card) {
   if (!card || card.zone !== 'hand' || card.owner !== owner) {
     return false;
@@ -700,9 +726,7 @@ function evaluateEnemyPlacement(card, slotIndex) {
 
 function chooseBestEnemySummon() {
   const hand = getHandCards('enemy');
-  const emptySlots = getEmptySlotIndices();
-
-  if (hand.length === 0 || emptySlots.length === 0) {
+  if (hand.length === 0) {
     return null;
   }
 
@@ -719,7 +743,8 @@ function chooseBestEnemySummon() {
       return sum + (tribute ? getRankTotalPower(tribute.rank) : 0);
     }, 0);
 
-    emptySlots.forEach((slotIndex) => {
+    const candidateSlots = getSummonCandidateSlots('enemy', bestTribute ?? []);
+    candidateSlots.forEach((slotIndex) => {
       const score = evaluateEnemyPlacement(card, slotIndex) + getRankTotalPower(card.rank) * 0.7 - tributeLoss * 1.4;
       if (!best || score > best.score) {
         best = { card, slotIndex, tributeIds: bestTribute ?? [], score };
@@ -803,7 +828,8 @@ function executeEnemyMainAction(nowMs) {
   if (summon) {
     const { card, slotIndex, tributeIds } = summon;
     const targetSlot = slotCenters[slotIndex];
-    if (targetSlot.occupiedByCardId !== null) {
+    const summonableSlots = getSummonCandidateSlots('enemy', tributeIds);
+    if (!summonableSlots.includes(slotIndex)) {
       return false;
     }
     gameState.interactionLock = true;
@@ -984,15 +1010,13 @@ function onPointerUp(event) {
   if (card && pointerState.kind === 'drag') {
     card.ui.isDragging = false;
 
-    const targetSlot = slotCenters.find(
-      (slot) => pointInSlot(card.x, card.y, slot) && slot.occupiedByCardId === null,
-    );
+    const targetSlot = slotCenters.find((slot) => pointInSlot(card.x, card.y, slot));
 
     gameState.interactionLock = true;
   
     if (targetSlot) {
       const tributeOptions = getSummonTributeOptions('player', card.rank);
-      const selectedTribute = chooseBestTributeOption(tributeOptions);
+      const selectedTribute = chooseBestTributeOptionForTarget('player', tributeOptions, targetSlot.id);
 
       if (!selectedTribute) {
         addDamageText(card.x, card.y - 70, `RANK ${card.rank} COST`, '#ffc4c4');

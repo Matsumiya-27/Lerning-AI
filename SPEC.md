@@ -141,4 +141,5 @@
    - Rank 2 total power: 7 (`left + right = 7`).
    - Rank 3 total power: 10 (`left + right = 10`).
 4. AI summon compliance
-   - Enemy summon also obeys rank tribute rules and only uses legal empty slots.
+   - Enemy summon also obeys rank tribute rules and only uses legal summonable slots.
+   - Tribute summon can still be performed even when field starts full, as long as tribute cards free a legal slot.
