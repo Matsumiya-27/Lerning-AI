@@ -382,7 +382,13 @@ function canSummonCard(owner, card) {
   if (!card || card.zone !== 'hand' || card.owner !== owner) {
     return false;
   }
-  return getSummonTributeOptions(owner, card.rank).length > 0;
+
+  if (card.rank === 1) {
+    return hasEmptyFieldSlot();
+  }
+
+  const tributeOptions = getSummonTributeOptions(owner, card.rank);
+  return tributeOptions.some((ids) => getSummonCandidateSlots(owner, ids).length > 0);
 }
 
 function getSlotOccupant(slotId) {
@@ -418,7 +424,7 @@ function canConfirmSummonSelection() {
 
   const hasRank2 = selectedCards.some((c) => c.rank === 2);
   if (selection.preselectedIds.length > 0) {
-    return selectedCards.length >= 2;
+    return selectedCards.length >= 2 || hasRank2;
   }
   return selectedCards.length >= 2 || hasRank2;
 }
@@ -1395,6 +1401,15 @@ function drawSummonSelectionOverlay() {
   ctx.save();
   ctx.fillStyle = 'rgba(8, 12, 20, 0.58)';
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  const targetSlot = slotCenters[selection.targetSlotId];
+  if (targetSlot) {
+    ctx.strokeStyle = '#ff6b6b';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([10, 6]);
+    ctx.strokeRect(targetSlot.x - CARD_WIDTH / 2 - 8, targetSlot.y - CARD_HEIGHT / 2 - 8, CARD_WIDTH + 16, CARD_HEIGHT + 16);
+    ctx.setLineDash([]);
+  }
 
   // 生贄候補の明示
   getFieldCards('player').forEach((card) => {
