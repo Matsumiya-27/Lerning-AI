@@ -1262,6 +1262,14 @@ function onPointerUp(event) {
             // 場のカードが複数 → 選択オーバーレイ表示
             beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
           }
+        } else if (card.rank === 3) {
+          // Rank3: ドロップ先に自軍Rank2がいれば即座に1体生贄で召喚
+          const occupant = getSlotOccupant(targetSlot.id);
+          if (occupant && occupant.owner === 'player' && occupant.rank === 2) {
+            performSummon(card, targetSlot, [occupant.id]);
+          } else {
+            beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
+          }
         } else {
           beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
         }
@@ -1607,21 +1615,24 @@ function drawCards(nowMs) {
     const rightWidth = ctx.measureText(rightText).width;
     ctx.fillText(rightText, left + width - 12 - rightWidth, centerY + 7);
 
-    ctx.font = '11px sans-serif';
-    let actedText, actedColor;
-    if (card.combat.hasActedThisTurn) {
-      actedText = 'USED';
-      actedColor = '#888888';
-    } else if (card.combat.summonedThisTurn) {
-      // 召喚酔い：直接攻撃不可
-      actedText = 'ENTRY';
-      actedColor = '#c8a020';
-    } else {
-      actedText = 'READY';
-      actedColor = '#333333';
+    // ステータス表示はフィールドカードのみ（手札では非表示）
+    if (card.zone === 'field') {
+      ctx.font = '11px sans-serif';
+      let actedText, actedColor;
+      if (card.combat.hasActedThisTurn) {
+        actedText = 'USED';
+        actedColor = '#888888';
+      } else if (card.combat.summonedThisTurn) {
+        // 召喚酔い：直接攻撃不可
+        actedText = 'ENTRY';
+        actedColor = '#c8a020';
+      } else {
+        actedText = 'READY';
+        actedColor = '#333333';
+      }
+      ctx.fillStyle = actedColor;
+      ctx.fillText(actedText, left + 10, top + height - 12);
     }
-    ctx.fillStyle = actedColor;
-    ctx.fillText(actedText, left + 10, top + height - 12);
 
     if (nowMs < card.ui.crossUntilMs) {
       drawCrossMark(centerX, centerY);
