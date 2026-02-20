@@ -139,6 +139,7 @@ function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = 
       attackLeft,
       attackRight,
       hasActedThisTurn: false,
+      summonedThisTurn: false,
     },
     ui: {
       isDragging: false,
@@ -467,6 +468,23 @@ function cancelSummonSelection() {
   gameState.interactionLock = false;
 }
 
+// 召喚実行の共通処理（オーバーレイ経由・直接経由どちらからも呼ぶ）
+function performSummon(card, targetSlot, tributeIds) {
+  applyTributeByIds(tributeIds);
+  startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
+    card.zone = 'field';
+    card.handIndex = null;
+    card.fieldSlotIndex = targetSlot.id;
+    card.combat.summonedThisTurn = true;
+    targetSlot.occupiedByCardId = card.id;
+    reflowHand(card.owner);
+    gameState.interactionLock = false;
+    gameState.summonSelection.active = false;
+    gameState.summonSelection.preselectedIds = [];
+    gameState.summonSelection.selectedIds = [];
+  });
+}
+
 function confirmSummonSelection() {
   const selection = gameState.summonSelection;
   const card = getCardById(selection.cardId);
@@ -476,19 +494,7 @@ function confirmSummonSelection() {
   }
 
   const allTributeIds = [...selection.preselectedIds, ...selection.selectedIds];
-  applyTributeByIds(allTributeIds);
-
-  startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
-    card.zone = 'field';
-    card.handIndex = null;
-    card.fieldSlotIndex = targetSlot.id;
-    targetSlot.occupiedByCardId = card.id;
-    reflowHand(card.owner);
-    gameState.interactionLock = false;
-    gameState.summonSelection.active = false;
-    gameState.summonSelection.preselectedIds = [];
-    gameState.summonSelection.selectedIds = [];
-  });
+  performSummon(card, targetSlot, allTributeIds);
 }
 
 function showSummonCostErrorFeedback(card) {
@@ -542,7 +548,7 @@ function hasAdjacentEnemyTarget(card) {
 function canOwnerAct(owner) {
   const canSummon = getHandCards(owner).some((card) => canSummonCard(owner, card));
   const canAttack = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && hasAdjacentEnemyTarget(card));
-  const canDirect = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn) && canDirectAttack(owner);
+  const canDirect = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && !card.combat.summonedThisTurn) && canDirectAttack(owner);
   return canSummon || canAttack || canDirect;
 }
 
@@ -580,6 +586,7 @@ function applyDrawPhase(owner) {
 function clearActedFlags(owner) {
   getFieldCards(owner).forEach((card) => {
     card.combat.hasActedThisTurn = false;
+    card.combat.summonedThisTurn = false;
   });
 }
 
@@ -807,7 +814,7 @@ function resolveDirectAttack(attacker) {
     return;
   }
 
-  if (attacker.combat.hasActedThisTurn || !canDirectAttack(attacker.owner)) {
+  if (attacker.combat.hasActedThisTurn || attacker.combat.summonedThisTurn || !canDirectAttack(attacker.owner)) {
     if (attacker.owner === 'player') {
       triggerUsedCardFeedback(attacker, performance.now());
     }
@@ -957,8 +964,9 @@ function chooseBestEnemyAttack() {
   }
 
   if (canDirectAttack('enemy')) {
-    const directCandidate = attackers[0]
-      ? { attacker: attackers[0], direction: 'direct', score: 12 + (STARTING_HP - gameState.hp.player) }
+    const directAttacker = attackers.find((card) => !card.combat.summonedThisTurn);
+    const directCandidate = directAttacker
+      ? { attacker: directAttacker, direction: 'direct', score: 12 + (STARTING_HP - gameState.hp.player) }
       : null;
     if (directCandidate && (!best || directCandidate.score > best.score)) {
       best = directCandidate;
@@ -1000,6 +1008,7 @@ function executeEnemyMainAction(nowMs) {
       card.zone = 'field';
       card.handIndex = null;
       card.fieldSlotIndex = slotIndex;
+      card.combat.summonedThisTurn = true;
       targetSlot.occupiedByCardId = card.id;
       reflowHand('enemy');
       gameState.interactionLock = false;
@@ -1224,6 +1233,7 @@ function onPointerUp(event) {
           card.zone = 'field';
           card.handIndex = null;
           card.fieldSlotIndex = targetSlot.id;
+          card.combat.summonedThisTurn = true;
           targetSlot.occupiedByCardId = card.id;
           reflowHand('player');
           gameState.interactionLock = false;
@@ -1238,6 +1248,20 @@ function onPointerUp(event) {
             card.zone = 'hand';
             gameState.interactionLock = false;
           });
+        } else if (card.rank === 2) {
+          // Rank2は生贄1体のみ。選択が明確なら暗転確認オーバーレイをスキップ
+          const occupant = getSlotOccupant(targetSlot.id);
+          const playerFieldCards = getFieldCards('player');
+          if (occupant && occupant.owner === 'player') {
+            // ドロップ先が自軍カード → 即座に召喚
+            performSummon(card, targetSlot, [occupant.id]);
+          } else if (playerFieldCards.length === 1) {
+            // 場のカードが1枚のみ → 選択の余地なし、即座に召喚
+            performSummon(card, targetSlot, [playerFieldCards[0].id]);
+          } else {
+            // 場のカードが複数 → 選択オーバーレイ表示
+            beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
+          }
         } else {
           beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
         }
@@ -1584,8 +1608,19 @@ function drawCards(nowMs) {
     ctx.fillText(rightText, left + width - 12 - rightWidth, centerY + 7);
 
     ctx.font = '11px sans-serif';
-    ctx.fillStyle = '#333333';
-    const actedText = card.combat.hasActedThisTurn ? 'USED' : 'READY';
+    let actedText, actedColor;
+    if (card.combat.hasActedThisTurn) {
+      actedText = 'USED';
+      actedColor = '#888888';
+    } else if (card.combat.summonedThisTurn) {
+      // 召喚酔い：直接攻撃不可
+      actedText = 'ENTRY';
+      actedColor = '#c8a020';
+    } else {
+      actedText = 'READY';
+      actedColor = '#333333';
+    }
+    ctx.fillStyle = actedColor;
     ctx.fillText(actedText, left + 10, top + height - 12);
 
     if (nowMs < card.ui.crossUntilMs) {
