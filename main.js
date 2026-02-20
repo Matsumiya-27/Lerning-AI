@@ -1614,7 +1614,7 @@ function drawCards(nowMs) {
       actedColor = '#888888';
     } else if (card.combat.summonedThisTurn) {
       // 召喚酔い：直接攻撃不可
-      actedText = 'SICK';
+      actedText = 'ENTRY';
       actedColor = '#c8a020';
     } else {
       actedText = 'READY';
