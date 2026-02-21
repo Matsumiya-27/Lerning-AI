@@ -2,7 +2,7 @@
 import {
   STARTING_HAND, SHAKE_DURATION_MS, HIT_FLASH_MS,
   DESTROY_ANIMATION_MS, DIRECT_ATTACK_HIT_MS,
-  CANVAS_WIDTH, CANVAS_HEIGHT, RANK_ATTACK_MAX,
+  CANVAS_WIDTH, CANVAS_HEIGHT, RANK_ATTACK_MAX, EFFECT_RANK_TOTAL,
 } from './constants.js';
 import {
   gameState, slotCenters, getHandCenter,
@@ -15,12 +15,13 @@ import {
 
 // ===== カードファクトリ =====
 
-export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight }) {
+export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight, effect = null }) {
   return {
     id,
     owner,
     zone,
     rank,
+    effect,  // 'rush' | 'pierce' | 'revenge' | null
     handIndex,
     fieldSlotIndex,
     x,
@@ -42,6 +43,15 @@ export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotI
       pendingRemoval: false,
     },
   };
+}
+
+// ランクに対応する効果をランダムに決定（25%の確率で付与）
+function randomEffectForRank(rank) {
+  if (Math.random() > 0.25) return null;
+  if (rank === 1) return 'rush';
+  if (rank === 2) return 'pierce';
+  if (rank === 3) return 'revenge';
+  return null;
 }
 
 export function randomRank() {
@@ -72,7 +82,10 @@ export function drawRandomCardToHand(owner) {
   const handIndex = handCards.length;
   const center = getHandCenter(owner, handIndex, handIndex + 1);
   const rank = randomRank();
-  const pair = randomAttackPair(getRankTotalPower(rank), RANK_ATTACK_MAX[rank]);
+  const effect = randomEffectForRank(rank);
+  // 効果カードは合計攻撃力が1低い（効果がその分を補う）
+  const total = effect ? EFFECT_RANK_TOTAL[rank] : getRankTotalPower(rank);
+  const pair = randomAttackPair(total, RANK_ATTACK_MAX[rank]);
   const card = createCard({
     id: gameState.nextCardId,
     owner,
@@ -83,6 +96,7 @@ export function drawRandomCardToHand(owner) {
     y: center.y,
     attackLeft: pair.left,
     attackRight: pair.right,
+    effect,
   });
   gameState.nextCardId += 1;
   gameState.cards.push(card);
@@ -291,7 +305,8 @@ export function performSummon(card, targetSlot, tributeIds) {
     card.zone = 'field';
     card.handIndex = null;
     card.fieldSlotIndex = targetSlot.id;
-    card.combat.summonedThisTurn = true;
+    // rush効果: 召喚酔いなし（直接攻撃を同ターンに使用可能）
+    card.combat.summonedThisTurn = card.effect !== 'rush';
     targetSlot.occupiedByCardId = card.id;
     reflowHand(card.owner);
     gameState.interactionLock = false;
@@ -388,7 +403,8 @@ export function performOverrideSummon(card, targetSlot) {
       card.zone = 'field';
       card.handIndex = null;
       card.fieldSlotIndex = targetSlot.id;
-      card.combat.summonedThisTurn = true;
+      // rush効果: 召喚酔いなし
+      card.combat.summonedThisTurn = card.effect !== 'rush';
       targetSlot.occupiedByCardId = card.id;
       reflowHand(card.owner);
       gameState.interactionLock = false;
@@ -473,6 +489,27 @@ export function resolveSwipeAttack(attacker, direction) {
     destroyedCards.push(attacker, defender);
   }
 
+  const attackerLost = destroyedCards.includes(attacker);
+  const defenderLost = destroyedCards.includes(defender);
+
+  // 効果ダメージリストを構築
+  const effectDamageList = []; // { targetOwner, amount, label, color }
+
+  // pierce: 自カードが生き残った（勝利）場合のみ、相手プレイヤーに1ダメージ（同点破棄は勝利ではないため対象外）
+  if (!attackerLost && defenderLost && attacker.effect === 'pierce') {
+    effectDamageList.push({ targetOwner: defender.owner, amount: 1, label: 'PIERCE -1', color: '#ffe050' });
+  } else if (!defenderLost && attackerLost && defender.effect === 'pierce') {
+    effectDamageList.push({ targetOwner: attacker.owner, amount: 1, label: 'PIERCE -1', color: '#ffe050' });
+  }
+
+  // revenge: 戦闘で破壊されたカードが持つ効果。相手プレイヤーに2ダメージ（同点も含む）
+  if (attackerLost && attacker.effect === 'revenge') {
+    effectDamageList.push({ targetOwner: defender.owner, amount: 2, label: 'REVENGE -2', color: '#e060ff' });
+  }
+  if (defenderLost && defender.effect === 'revenge') {
+    effectDamageList.push({ targetOwner: attacker.owner, amount: 2, label: 'REVENGE -2', color: '#e060ff' });
+  }
+
   attacker.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
   defender.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
   triggerScreenShake(6, 170);
@@ -487,13 +524,35 @@ export function resolveSwipeAttack(attacker, direction) {
       markCardDestroyed(card, removeAt);
     });
 
+    // 効果発動テキスト表示
+    if (effectDamageList.length > 0) {
+      effectDamageList.forEach((e, i) => {
+        addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20 + i * 34, e.label, e.color);
+      });
+      triggerScreenShake(5, 150);
+    }
+
     setTimeout(() => {
       if (gameState.matchId !== matchIdAtStart) {
         return;
       }
-      gameState.interactionLock = false;
+      let gameEnded = false;
+      effectDamageList.forEach(({ targetOwner, amount }) => {
+        if (gameEnded) return;
+        gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - amount);
+        triggerHpPulse(targetOwner, 560);
+        const hpPos = getHpBadgePosition(targetOwner);
+        addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
+        if (gameState.hp[targetOwner] <= 0) {
+          finishGame(targetOwner === 'player' ? 'enemy' : 'player');
+          gameEnded = true;
+        }
+      });
+      if (!gameEnded) {
+        gameState.interactionLock = false;
+      }
       recomputeSlotOccupancy();
-        }, DESTROY_ANIMATION_MS);
+    }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
 }
 
