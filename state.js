@@ -52,6 +52,10 @@ export const gameState = {
   result: {
     winner: null,
   },
+  discardPrompt: {
+    active: false,
+    owner: null, // 'player' | 'enemy'
+  },
   fx: {
     screenShakeUntilMs: 0,
     screenShakePower: 0,
@@ -232,6 +236,13 @@ export function getSummonSelectionButtons() {
   return {
     confirm: { x: 366, y: 590, width: 110, height: 44 },
     cancel: { x: 488, y: 590, width: 110, height: 44 },
+  };
+}
+
+export function getDiscardPromptButtons() {
+  return {
+    discard: { x: 310, y: 390, width: 150, height: 44 },
+    skip:    { x: 500, y: 390, width: 150, height: 44 },
   };
 }
 

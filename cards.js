@@ -201,6 +201,11 @@ export function canSummonCard(owner, card) {
     return false;
   }
 
+  // 上書き召喚: RANK1/2は相手のRANK1カード上に生贄コストなしで出せる
+  if ((card.rank === 1 || card.rank === 2) && getOverrideSummonSlots(owner).length > 0) {
+    return true;
+  }
+
   if (card.rank === 1) {
     return hasEmptyFieldSlot();
   }
@@ -339,6 +344,55 @@ export function toggleSummonSelectionCard(cardId) {
     selection.selectedIds.shift();
   }
   selection.selectedIds.push(cardId);
+}
+
+// ===== 上書き召喚 =====
+
+// 自分の場が空かつ相手のRANK1カードが存在する場合に上書き召喚が可能
+export function isOverrideSummonAvailable(owner) {
+  const opponent = owner === 'player' ? 'enemy' : 'player';
+  return getFieldCards(owner).length === 0 && getFieldCards(opponent).length > 0;
+}
+
+// 上書き可能な相手のRANK1スロットIDを返す
+export function getOverrideSummonSlots(owner) {
+  if (!isOverrideSummonAvailable(owner)) {
+    return [];
+  }
+  const opponent = owner === 'player' ? 'enemy' : 'player';
+  return getFieldCards(opponent)
+    .filter((c) => c.rank === 1)
+    .map((c) => c.fieldSlotIndex);
+}
+
+// 上書き召喚実行: 相手のRANK1を破棄してその場所に自分のカードを置く（生贄コストなし）
+export function performOverrideSummon(card, targetSlot) {
+  const nowMs = performance.now();
+  const matchIdAtStart = gameState.matchId;
+  gameState.interactionLock = true;
+
+  const occupant = getCardById(targetSlot.occupiedByCardId);
+  if (occupant) {
+    markCardDestroyed(occupant, nowMs);
+    addDamageText(targetSlot.x, targetSlot.y - 60, 'OVERRIDE!', '#ffd470');
+    triggerScreenShake(4, 120);
+  }
+
+  // 破棄アニメ後にカードを移動（同スロットに重なる見た目を避ける）
+  setTimeout(() => {
+    if (gameState.matchId !== matchIdAtStart) {
+      return;
+    }
+    startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
+      card.zone = 'field';
+      card.handIndex = null;
+      card.fieldSlotIndex = targetSlot.id;
+      card.combat.summonedThisTurn = true;
+      targetSlot.occupiedByCardId = card.id;
+      reflowHand(card.owner);
+      gameState.interactionLock = false;
+    });
+  }, DESTROY_ANIMATION_MS);
 }
 
 // ===== ゲームルール判定 =====

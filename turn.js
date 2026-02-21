@@ -4,16 +4,18 @@ import {
   STARTING_HP, ENEMY_AUTO_END_MS,
   FIRST_PLAYER_BANNER_MS, FIRST_PLAYER_READY_DELAY_MS,
   NO_ACTION_AUTO_END_DELAY_MS, COIN_RESULT_WOBBLE_MS,
+  DESTROY_ANIMATION_MS,
 } from './constants.js';
 import {
   gameState, slotCenters, showBanner,
   reflowHand, getHandCards, getFieldCards,
+  markCardDestroyed,
 } from './state.js';
 import {
   drawRandomCardToHand, buildInitialCards,
   isPlayerMainTurn, canOwnerAct,
 } from './cards.js';
-import { executeEnemyMainAction } from './ai.js';
+import { executeEnemyMainAction, aiShouldDiscardHand } from './ai.js';
 
 export function applyDrawPhase(owner) {
   const handCountAtStart = getHandCards(owner).length;
@@ -68,18 +70,16 @@ export function beginTurn(owner, isNewRound = false) {
   beginMainPhase(owner);
 }
 
-export function endCurrentTurn(reason = 'manual') {
-  if (gameState.turn.phase !== 'main' || gameState.interactionLock || gameState.result.winner) {
-    return;
-  }
+// ===== 全破棄 =====
 
-  // プレイヤー手動終了、敵自動終了、行動不能自動終了のいずれか
-  if (reason === 'manual' && !isPlayerMainTurn()) {
-    return;
-  }
+export function applyDiscardAll(owner) {
+  const nowMs = performance.now();
+  getHandCards(owner).forEach((card) => markCardDestroyed(card, nowMs));
+}
 
+// ターン遷移本体（全破棄判定の後に呼ぶ）
+function proceedEndTurn() {
   gameState.interactionLock = true;
-
   const current = gameState.turn.currentPlayer;
   const next = current === 'player' ? 'enemy' : 'player';
   const isNewRound = next === gameState.turn.firstPlayer;
@@ -92,6 +92,67 @@ export function endCurrentTurn(reason = 'manual') {
     gameState.interactionLock = false;
     beginTurn(next, isNewRound);
   }, 220);
+}
+
+// プレイヤーが全破棄ダイアログで選択したあとに呼ぶ
+export function confirmDiscardPrompt(shouldDiscard) {
+  if (!gameState.discardPrompt.active) {
+    return;
+  }
+  gameState.discardPrompt.active = false;
+  gameState.discardPrompt.owner = null;
+
+  if (shouldDiscard) {
+    applyDiscardAll('player');
+    // 破棄アニメ完了後にターン遷移
+    const matchIdAtSchedule = gameState.matchId;
+    setTimeout(() => {
+      if (gameState.matchId !== matchIdAtSchedule) {
+        return;
+      }
+      proceedEndTurn();
+    }, DESTROY_ANIMATION_MS + 60);
+  } else {
+    proceedEndTurn();
+  }
+}
+
+export function endCurrentTurn(reason = 'manual') {
+  if (gameState.turn.phase !== 'main' || gameState.interactionLock || gameState.result.winner) {
+    return;
+  }
+
+  // プレイヤー手動終了、敵自動終了、行動不能自動終了のいずれか
+  if (reason === 'manual' && !isPlayerMainTurn()) {
+    return;
+  }
+
+  const current = gameState.turn.currentPlayer;
+
+  // 手札3枚以上の場合は全破棄の選択を行う
+  if (getHandCards(current).length >= 3) {
+    if (current === 'player') {
+      // プレイヤー: ダイアログを表示して待機（confirmDiscardPromptで再開）
+      gameState.discardPrompt.active = true;
+      gameState.discardPrompt.owner = 'player';
+      return;
+    } else {
+      // 敵AI: ヒューリスティクスで判断
+      if (aiShouldDiscardHand('enemy')) {
+        applyDiscardAll('enemy');
+        const matchIdAtSchedule = gameState.matchId;
+        setTimeout(() => {
+          if (gameState.matchId !== matchIdAtSchedule) {
+            return;
+          }
+          proceedEndTurn();
+        }, DESTROY_ANIMATION_MS + 60);
+        return;
+      }
+    }
+  }
+
+  proceedEndTurn();
 }
 
 export function startCoinToss() {
@@ -116,6 +177,8 @@ export function resetGame() {
   gameState.summonSelection.targetSlotId = null;
   gameState.summonSelection.preselectedIds = [];
   gameState.summonSelection.selectedIds = [];
+  gameState.discardPrompt.active = false;
+  gameState.discardPrompt.owner = null;
   gameState.result.winner = null;
   gameState.hp.player = STARTING_HP;
   gameState.hp.enemy = STARTING_HP;
@@ -141,6 +204,11 @@ export function resetGame() {
 
 export function updateTurnFlow(nowMs) {
   if (gameState.result.winner) {
+    return;
+  }
+
+  // 全破棄ダイアログ中はターンフローを止める
+  if (gameState.discardPrompt.active) {
     return;
   }
 

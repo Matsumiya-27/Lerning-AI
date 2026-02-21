@@ -7,10 +7,11 @@ import {
 import {
   ctx, gameState, slotCenters,
   getHandCards, getFieldCards, getCardById,
-  getHpBadgePosition, getSummonSelectionButtons,
+  getHpBadgePosition, getSummonSelectionButtons, getDiscardPromptButtons,
 } from './state.js';
 import {
   canUseEndTurnButton, getSelectedTributeCards, canConfirmSummonSelection,
+  isOverrideSummonAvailable, getOverrideSummonSlots,
 } from './cards.js';
 
 function drawTable() {
@@ -35,6 +36,22 @@ function drawTable() {
     ctx.strokeRect(slot.x - CARD_WIDTH / 2, slot.y - CARD_HEIGHT / 2, CARD_WIDTH, CARD_HEIGHT);
   });
   ctx.setLineDash([]);
+
+  // 上書き召喚可能スロットをゴールドでハイライト（プレイヤーがドラッグ中のみ）
+  const isDragging = gameState.cards.some((c) => c.ui.isDragging && c.owner === 'player');
+  if (isDragging && isOverrideSummonAvailable('player')) {
+    const overrideSlots = getOverrideSummonSlots('player');
+    overrideSlots.forEach((slotId) => {
+      const slot = slotCenters[slotId];
+      ctx.strokeStyle = '#ffd470';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(slot.x - CARD_WIDTH / 2 - 4, slot.y - CARD_HEIGHT / 2 - 4, CARD_WIDTH + 8, CARD_HEIGHT + 8);
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255, 212, 112, 0.10)';
+      ctx.fillRect(slot.x - CARD_WIDTH / 2 - 4, slot.y - CARD_HEIGHT / 2 - 4, CARD_WIDTH + 8, CARD_HEIGHT + 8);
+    });
+  }
 }
 
 function drawHudLabels() {
@@ -473,6 +490,62 @@ function drawTurnBanner(nowMs) {
   ctx.restore();
 }
 
+function drawDiscardPrompt() {
+  if (!gameState.discardPrompt.active) {
+    return;
+  }
+
+  const handCount = getHandCards('player').length;
+  const { discard, skip } = getDiscardPromptButtons();
+  const dialogX = 250;
+  const dialogY = 270;
+  const dialogW = 460;
+  const dialogH = 195;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 12, 20, 0.72)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  ctx.fillStyle = '#0f1828';
+  ctx.strokeStyle = '#9fb4dc';
+  ctx.lineWidth = 2;
+  ctx.fillRect(dialogX, dialogY, dialogW, dialogH);
+  ctx.strokeRect(dialogX, dialogY, dialogW, dialogH);
+
+  ctx.fillStyle = '#eaf1ff';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`手札が ${handCount} 枚あります`, CANVAS_WIDTH / 2, dialogY + 44);
+  ctx.font = '16px sans-serif';
+  ctx.fillStyle = '#c8d6f0';
+  ctx.fillText('ターン終了前に手札を全て破棄しますか？', CANVAS_WIDTH / 2, dialogY + 76);
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#8898b8';
+  ctx.fillText('破棄した場合、次のドローフェイズで4枚引き直せます', CANVAS_WIDTH / 2, dialogY + 104);
+
+  // 全破棄ボタン
+  ctx.fillStyle = '#4a2a33';
+  ctx.strokeStyle = '#c18595';
+  ctx.lineWidth = 2;
+  ctx.fillRect(discard.x, discard.y, discard.width, discard.height);
+  ctx.strokeRect(discard.x, discard.y, discard.width, discard.height);
+  ctx.fillStyle = '#ffe5ea';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('全破棄', discard.x + discard.width / 2, discard.y + 27);
+
+  // スキップボタン
+  ctx.fillStyle = '#274a7f';
+  ctx.strokeStyle = '#7db5ff';
+  ctx.lineWidth = 2;
+  ctx.fillRect(skip.x, skip.y, skip.width, skip.height);
+  ctx.strokeRect(skip.x, skip.y, skip.width, skip.height);
+  ctx.fillStyle = '#edf4ff';
+  ctx.fillText('スキップ', skip.x + skip.width / 2, skip.y + 27);
+
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
 export function draw(nowMs) {
   let shakeX = 0;
   let shakeY = 0;
@@ -496,6 +569,7 @@ export function draw(nowMs) {
   drawCoinToss(nowMs);
   drawTurnBanner(nowMs);
   drawSummonSelectionOverlay();
+  drawDiscardPrompt();
 
   if (nowMs < gameState.fx.koFlashUntilMs) {
     const remain = gameState.fx.koFlashUntilMs - nowMs;
