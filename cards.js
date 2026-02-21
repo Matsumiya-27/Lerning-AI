@@ -348,10 +348,9 @@ export function toggleSummonSelectionCard(cardId) {
 
 // ===== 上書き召喚 =====
 
-// 自分の場が空かつ相手のRANK1カードが存在する場合に上書き召喚が可能
+// 全5スロットが相手のカードで埋まっている（空きスロットなし）場合のみ上書き召喚が可能
 export function isOverrideSummonAvailable(owner) {
-  const opponent = owner === 'player' ? 'enemy' : 'player';
-  return getFieldCards(owner).length === 0 && getFieldCards(opponent).length > 0;
+  return !hasEmptyFieldSlot() && getFieldCards(owner).length === 0;
 }
 
 // 上書き可能な相手のRANK1スロットIDを返す
