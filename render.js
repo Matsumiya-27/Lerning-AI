@@ -323,6 +323,15 @@ function drawCards(nowMs) {
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText(rankLabel, left + 10, top + 18);
 
+    // 効果バッジ（rush=緑・pierce=金・revenge=紫）
+    if (card.effect) {
+      const effectColor = { rush: '#2ca44e', pierce: '#c8a000', revenge: '#9040d0' };
+      const effectLabel = { rush: 'RUSH', pierce: 'PIERCE', revenge: 'RVNG' };
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillStyle = effectColor[card.effect] || '#888';
+      ctx.fillText(effectLabel[card.effect] || card.effect.toUpperCase(), left + 10, top + 31);
+    }
+
     ctx.font = 'bold 20px sans-serif';
     ctx.fillStyle = '#174f9b';
     ctx.fillText(String(card.combat.attackLeft), left + 10, centerY + 7);
