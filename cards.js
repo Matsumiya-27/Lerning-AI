@@ -2,7 +2,7 @@
 import {
   STARTING_HAND, SHAKE_DURATION_MS, HIT_FLASH_MS,
   DESTROY_ANIMATION_MS, DIRECT_ATTACK_HIT_MS,
-  CANVAS_WIDTH, CANVAS_HEIGHT,
+  CANVAS_WIDTH, CANVAS_HEIGHT, RANK_ATTACK_MAX,
 } from './constants.js';
 import {
   gameState, slotCenters, getHandCenter,
@@ -57,8 +57,10 @@ export function getRankTotalPower(rank) {
   return 5;
 }
 
-export function randomAttackPair(totalPower) {
-  const left = Math.floor(Math.random() * (totalPower - 1)) + 1;
+export function randomAttackPair(totalPower, maxSide) {
+  // 片側の値域: [totalPower - maxSide, maxSide]
+  const minSide = totalPower - maxSide;
+  const left = Math.floor(Math.random() * (maxSide - minSide + 1)) + minSide;
   return {
     left,
     right: totalPower - left,
@@ -70,7 +72,7 @@ export function drawRandomCardToHand(owner) {
   const handIndex = handCards.length;
   const center = getHandCenter(owner, handIndex, handIndex + 1);
   const rank = randomRank();
-  const pair = randomAttackPair(getRankTotalPower(rank));
+  const pair = randomAttackPair(getRankTotalPower(rank), RANK_ATTACK_MAX[rank]);
   const card = createCard({
     id: gameState.nextCardId,
     owner,

@@ -31,3 +31,7 @@ export const END_TURN_UI = {
   y: 360,
   radius: 48,
 };
+
+// ランクごとの片側攻撃値の最大値（合計値 - 最大値 が最小値になる）
+// R1: 2-3, R2: 3-4, R3: 4-6
+export const RANK_ATTACK_MAX = { 1: 3, 2: 4, 3: 6 };
