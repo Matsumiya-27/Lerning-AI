@@ -6,24 +6,23 @@
   "effects": {
     "rush":    "召喚酔いなし。召喚したターンでも直接攻撃できる。",
     "pierce":  "戦闘勝利時、攻撃力の差分ダメージを相手プレイヤーのHPにも与える。",
-    "drain":   "相手カードを破壊したとき、自分のHPを1回復する。",
     "revenge": "このカードが破壊されたとき、相手プレイヤーのHPを1減らす。"
   },
   "catalog": [
-    { "id": "r1_L2R3",        "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": null },
-    { "id": "r1_L3R2",        "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": null },
-    { "id": "r1_L1R4_rush",   "rank": 1, "attackLeft": 1, "attackRight": 4, "effect": "rush" },
-    { "id": "r1_L4R1_rush",   "rank": 1, "attackLeft": 4, "attackRight": 1, "effect": "rush" },
+    { "id": "r1_L2R3",          "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": null },
+    { "id": "r1_L3R2",          "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": null },
+    { "id": "r1_L1R3_rush",     "rank": 1, "attackLeft": 1, "attackRight": 3, "effect": "rush" },
+    { "id": "r1_L3R1_rush",     "rank": 1, "attackLeft": 3, "attackRight": 1, "effect": "rush" },
 
-    { "id": "r2_L3R4",        "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": null },
-    { "id": "r2_L4R3",        "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": null },
-    { "id": "r2_L2R5_pierce", "rank": 2, "attackLeft": 2, "attackRight": 5, "effect": "pierce" },
-    { "id": "r2_L5R2_pierce", "rank": 2, "attackLeft": 5, "attackRight": 2, "effect": "pierce" },
+    { "id": "r2_L3R4",          "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": null },
+    { "id": "r2_L4R3",          "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": null },
+    { "id": "r2_L2R4_pierce",   "rank": 2, "attackLeft": 2, "attackRight": 4, "effect": "pierce" },
+    { "id": "r2_L4R2_pierce",   "rank": 2, "attackLeft": 4, "attackRight": 2, "effect": "pierce" },
 
-    { "id": "r3_L4R6",        "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": null },
-    { "id": "r3_L5R5",        "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": null },
-    { "id": "r3_L6R4",        "rank": 3, "attackLeft": 6, "attackRight": 4, "effect": null },
-    { "id": "r3_L3R7_drain",  "rank": 3, "attackLeft": 3, "attackRight": 7, "effect": "drain" },
-    { "id": "r3_L7R3_drain",  "rank": 3, "attackLeft": 7, "attackRight": 3, "effect": "drain" }
+    { "id": "r3_L4R6",          "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": null },
+    { "id": "r3_L5R5",          "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": null },
+    { "id": "r3_L6R4",          "rank": 3, "attackLeft": 6, "attackRight": 4, "effect": null },
+    { "id": "r3_L4R5_revenge",  "rank": 3, "attackLeft": 4, "attackRight": 5, "effect": "revenge" },
+    { "id": "r3_L5R4_revenge",  "rank": 3, "attackLeft": 5, "attackRight": 4, "effect": "revenge" }
   ]
 }
