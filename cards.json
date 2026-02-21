@@ -1,0 +1,9 @@
+[
+  { "id": "r1_L2R3", "rank": 1, "attackLeft": 2, "attackRight": 3 },
+  { "id": "r1_L3R2", "rank": 1, "attackLeft": 3, "attackRight": 2 },
+  { "id": "r2_L3R4", "rank": 2, "attackLeft": 3, "attackRight": 4 },
+  { "id": "r2_L4R3", "rank": 2, "attackLeft": 4, "attackRight": 3 },
+  { "id": "r3_L4R6", "rank": 3, "attackLeft": 4, "attackRight": 6 },
+  { "id": "r3_L5R5", "rank": 3, "attackLeft": 5, "attackRight": 5 },
+  { "id": "r3_L6R4", "rank": 3, "attackLeft": 6, "attackRight": 4 }
+]
