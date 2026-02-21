@@ -9,6 +9,7 @@ import {
   getRankTotalPower, getSummonTributeOptions, chooseBestTributeOption,
   getSummonCandidateSlots, canDirectAttack, applyTributeByIds,
   resolveSwipeAttack, resolveDirectAttack,
+  isOverrideSummonAvailable, getOverrideSummonSlots, performOverrideSummon,
 } from './cards.js';
 
 export function getEmptySlotIndices() {
@@ -55,6 +56,21 @@ export function chooseBestEnemySummon() {
 
   let best = null;
 
+  // 上書き召喚の評価（自場が空で相手のRANK1が存在する場合）
+  if (isOverrideSummonAvailable('enemy')) {
+    const overrideSlots = getOverrideSummonSlots('enemy');
+    hand.filter((c) => c.rank === 1 || c.rank === 2).forEach((card) => {
+      overrideSlots.forEach((slotIndex) => {
+        // 上書き召喚は生贄コスト0なので高スコア
+        const score = getRankTotalPower(card.rank) * 2.2;
+        if (!best || score > best.score) {
+          best = { card, slotIndex, tributeIds: [], score, isOverride: true };
+        }
+      });
+    });
+  }
+
+  // 通常召喚の評価
   hand.forEach((card) => {
     const tributeOptions = getSummonTributeOptions('enemy', card.rank);
     if (tributeOptions.length === 0) {
@@ -75,7 +91,7 @@ export function chooseBestEnemySummon() {
     candidateSlots.forEach((slotIndex) => {
       const score = evaluateEnemyPlacement(card, slotIndex) + summonPower * 0.7 - tributeLoss * 1.4;
       if (!best || score > best.score) {
-        best = { card, slotIndex, tributeIds: bestTribute ?? [], score };
+        best = { card, slotIndex, tributeIds: bestTribute ?? [], score, isOverride: false };
       }
     });
   });
@@ -155,8 +171,16 @@ export function executeEnemyMainAction(nowMs) {
 
   const summon = chooseBestEnemySummon();
   if (summon) {
-    const { card, slotIndex, tributeIds } = summon;
+    const { card, slotIndex, tributeIds, isOverride } = summon;
     const targetSlot = slotCenters[slotIndex];
+
+    if (isOverride) {
+      // 上書き召喚: performOverrideSummon に委譲
+      performOverrideSummon(card, targetSlot);
+      gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+      return true;
+    }
+
     const summonableSlots = getSummonCandidateSlots('enemy', tributeIds);
     if (!summonableSlots.includes(slotIndex)) {
       return false;
@@ -180,4 +204,10 @@ export function executeEnemyMainAction(nowMs) {
   }
 
   return false;
+}
+
+// ターン終了時に手札を全破棄すべきかどうかのAI判断
+export function aiShouldDiscardHand(owner) {
+  // 手札6枚以上は多すぎるので破棄して次ターンに引き直す
+  return getHandCards(owner).length >= 6;
 }
