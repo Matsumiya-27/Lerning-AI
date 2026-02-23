@@ -323,10 +323,20 @@ function drawCards(nowMs) {
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText(rankLabel, left + 10, top + 18);
 
-    // 効果バッジ（rush=緑・pierce=金・revenge=紫）
+    // 効果バッジ
     if (card.effect) {
-      const effectColor = { rush: '#2ca44e', pierce: '#c8a000', revenge: '#9040d0' };
-      const effectLabel = { rush: 'RUSH', pierce: 'PIERCE', revenge: 'RVNG' };
+      const effectColor = {
+        rush: '#2ca44e', pierce: '#c8a000', revenge: '#9040d0',
+        strike2: '#e05020', strike3: '#ff2800',
+        edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
+        swap: '#c07800', doublecenter: '#b000b0',
+      };
+      const effectLabel = {
+        rush: 'RUSH', pierce: 'PIERCE', revenge: 'RVNG',
+        strike2: 'STR×2', strike3: 'STR×3',
+        edge1: 'EDG+1', edge2: 'EDG+2', edgewin: 'EWIN',
+        swap: 'SWAP', doublecenter: '2HIT',
+      };
       ctx.font = 'bold 9px sans-serif';
       ctx.fillStyle = effectColor[card.effect] || '#888';
       ctx.fillText(effectLabel[card.effect] || card.effect.toUpperCase(), left + 10, top + 31);

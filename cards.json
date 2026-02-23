@@ -4,25 +4,44 @@
     "maxCopiesPerCard": 3
   },
   "effects": {
-    "rush":    "召喚酔いなし。召喚したターンでも直接攻撃できる。（合計攻撃力 -1）",
-    "pierce":  "戦闘勝利時、相手プレイヤーに1ダメージを与える。（合計攻撃力 -1）",
-    "revenge": "戦闘に敗北したとき、相手プレイヤーに2ダメージを与える。（合計攻撃力 -1）"
+    "rush":         "召喚酔いなし。召喚したターンでも直接攻撃できる。（合計攻撃力 -1）",
+    "pierce":       "戦闘勝利時、相手プレイヤーに1ダメージを与える。（合計攻撃力 -1）",
+    "revenge":      "戦闘に敗北したとき、相手プレイヤーに2ダメージを与える。（合計攻撃力 -1）",
+    "strike2":      "直接攻撃時、1の代わりに2ダメージを与える。（合計攻撃力 -1）",
+    "strike3":      "直接攻撃時、1の代わりに3ダメージを与える。（合計攻撃力 -1）",
+    "edge1":        "端スロット（0・4）のカードへの攻撃力+1。",
+    "edge2":        "端スロット（0・4）のカードへの攻撃力+2。",
+    "edgewin":      "端スロット（0・4）のカードへの攻撃時、必ず勝利する。防御時は通常通り。",
+    "swap":         "召喚成功時、両隣のカードを入れ替える（片方のみでも移動）。",
+    "doublecenter": "中央（スロット2）に配置した場合、召喚ターンに左右両方へ同時攻撃する。"
   },
   "catalog": [
-    { "id": "r1_L2R3",          "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": null },
-    { "id": "r1_L3R2",          "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": null },
-    { "id": "r1_L1R3_rush",     "rank": 1, "attackLeft": 1, "attackRight": 3, "effect": "rush" },
-    { "id": "r1_L3R1_rush",     "rank": 1, "attackLeft": 3, "attackRight": 1, "effect": "rush" },
+    { "id": "r1_L2R3",               "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": null },
+    { "id": "r1_L3R2",               "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": null },
+    { "id": "r1_L1R3_rush",          "rank": 1, "attackLeft": 1, "attackRight": 3, "effect": "rush" },
+    { "id": "r1_L3R1_rush",          "rank": 1, "attackLeft": 3, "attackRight": 1, "effect": "rush" },
+    { "id": "r1_L2R3_edge1",         "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": "edge1" },
+    { "id": "r1_L3R2_edge1",         "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": "edge1" },
 
-    { "id": "r2_L3R4",          "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": null },
-    { "id": "r2_L4R3",          "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": null },
-    { "id": "r2_L2R4_pierce",   "rank": 2, "attackLeft": 2, "attackRight": 4, "effect": "pierce" },
-    { "id": "r2_L4R2_pierce",   "rank": 2, "attackLeft": 4, "attackRight": 2, "effect": "pierce" },
+    { "id": "r2_L3R4",               "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": null },
+    { "id": "r2_L4R3",               "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": null },
+    { "id": "r2_L2R4_pierce",        "rank": 2, "attackLeft": 2, "attackRight": 4, "effect": "pierce" },
+    { "id": "r2_L4R2_pierce",        "rank": 2, "attackLeft": 4, "attackRight": 2, "effect": "pierce" },
+    { "id": "r2_L3R3_strike2",       "rank": 2, "attackLeft": 3, "attackRight": 3, "effect": "strike2" },
+    { "id": "r2_L3R4_edge2",         "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": "edge2" },
+    { "id": "r2_L4R3_edge2",         "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": "edge2" },
+    { "id": "r2_L3R4_swap",          "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": "swap" },
+    { "id": "r2_L4R3_swap",          "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": "swap" },
 
-    { "id": "r3_L4R6",          "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": null },
-    { "id": "r3_L5R5",          "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": null },
-    { "id": "r3_L6R4",          "rank": 3, "attackLeft": 6, "attackRight": 4, "effect": null },
-    { "id": "r3_L4R5_revenge",  "rank": 3, "attackLeft": 4, "attackRight": 5, "effect": "revenge" },
-    { "id": "r3_L5R4_revenge",  "rank": 3, "attackLeft": 5, "attackRight": 4, "effect": "revenge" }
+    { "id": "r3_L4R6",               "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": null },
+    { "id": "r3_L5R5",               "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": null },
+    { "id": "r3_L6R4",               "rank": 3, "attackLeft": 6, "attackRight": 4, "effect": null },
+    { "id": "r3_L4R5_revenge",       "rank": 3, "attackLeft": 4, "attackRight": 5, "effect": "revenge" },
+    { "id": "r3_L5R4_revenge",       "rank": 3, "attackLeft": 5, "attackRight": 4, "effect": "revenge" },
+    { "id": "r3_L3R6_strike3",       "rank": 3, "attackLeft": 3, "attackRight": 6, "effect": "strike3" },
+    { "id": "r3_L6R3_strike3",       "rank": 3, "attackLeft": 6, "attackRight": 3, "effect": "strike3" },
+    { "id": "r3_L4R6_edgewin",       "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": "edgewin" },
+    { "id": "r3_L6R4_edgewin",       "rank": 3, "attackLeft": 6, "attackRight": 4, "effect": "edgewin" },
+    { "id": "r3_L5R5_doublecenter",  "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": "doublecenter" }
   ]
 }
