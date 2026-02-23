@@ -29,6 +29,8 @@ export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotI
     combat: {
       attackLeft,
       attackRight,
+      baseAttackLeft: attackLeft,   // 永続デバフで変化する基本値
+      baseAttackRight: attackRight,
       hasActedThisTurn: false,
       summonedThisTurn: false,
     },
@@ -47,9 +49,9 @@ export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotI
 
 // ランクごとの効果リスト
 const RANK_EFFECTS = {
-  1: ['rush', 'edge1'],
-  2: ['pierce', 'strike2', 'edge2', 'swap'],
-  3: ['revenge', 'strike3', 'edgewin', 'doublecenter'],
+  1: ['rush', 'edge1', 'doubleblade', 'weakaura', 'offering'],
+  2: ['pierce', 'strike2', 'edge2', 'swap', 'doubleblade', 'deathcurse'],
+  3: ['revenge', 'strike3', 'edgewin', 'doublecenter', 'steal', 'harakiri'],
 };
 
 // 合計攻撃力を -1 する効果（カードの価値を効果で補う）
@@ -92,9 +94,11 @@ export function drawRandomCardToHand(owner) {
   const center = getHandCenter(owner, handIndex, handIndex + 1);
   const rank = randomRank();
   const effect = randomEffectForRank(rank);
-  // 一部の効果カードは合計攻撃力が1低い（REDUCED_TOTAL_EFFECTS に該当する場合のみ）
-  const total = (effect && REDUCED_TOTAL_EFFECTS.has(effect))
-    ? EFFECT_RANK_TOTAL[rank]
+  // harakiri: 壊滅的なデメリットの代わりに 6/6 の高スタッツ（R3合計 +2）
+  // REDUCED: rush/pierce 等は合計 -1
+  // それ以外: 標準合計
+  const total = effect === 'harakiri' ? 12
+    : (effect && REDUCED_TOTAL_EFFECTS.has(effect)) ? EFFECT_RANK_TOTAL[rank]
     : getRankTotalPower(rank);
   const pair = randomAttackPair(total, RANK_ATTACK_MAX[rank]);
   const card = createCard({
@@ -317,23 +321,40 @@ export function performSummon(card, targetSlot, tributeIds) {
     card.zone = 'field';
     card.handIndex = null;
     card.fieldSlotIndex = targetSlot.id;
-    // rush効果: 召喚酔いなし（直接攻撃を同ターンに使用可能）
-    card.combat.summonedThisTurn = card.effect !== 'rush';
+    // rush/doubleblade: 召喚酔いなし（直接攻撃を同ターンに使用可能）
+    const hasRush = card.effect === 'rush' || card.effect === 'doubleblade';
+    card.combat.summonedThisTurn = !hasRush;
     targetSlot.occupiedByCardId = card.id;
     reflowHand(card.owner);
     gameState.summonSelection.active = false;
     gameState.summonSelection.preselectedIds = [];
     gameState.summonSelection.selectedIds = [];
+    applyBoardEffects();
 
-    // swap効果: 召喚位置の左右カードを入れ替え
+    // swap効果
     if (card.effect === 'swap') {
       performSwapEffect(card);
       gameState.interactionLock = false;
       return;
     }
-    // doublecenter効果: 中央配置なら左右へ自動同時攻撃
+    // doublecenter効果
     if (card.effect === 'doublecenter' && card.fieldSlotIndex === 2) {
       performDoubleCenterAttack(card, matchIdAtStart);
+      return;
+    }
+    // offering効果: プレイヤー召喚時のみ選択UI
+    if (card.effect === 'offering' && card.owner === 'player') {
+      performOfferingEffect(card);
+      return;
+    }
+    // steal効果: 隣接敵カードを奪う
+    if (card.effect === 'steal') {
+      performStealEffect(card, matchIdAtStart);
+      return;
+    }
+    // harakiri効果: 自陣全カード破壊（自身含む）
+    if (card.effect === 'harakiri') {
+      performHarakiriEffect(card, matchIdAtStart);
       return;
     }
 
@@ -428,10 +449,12 @@ export function performOverrideSummon(card, targetSlot) {
       card.zone = 'field';
       card.handIndex = null;
       card.fieldSlotIndex = targetSlot.id;
-      // rush効果: 召喚酔いなし
-      card.combat.summonedThisTurn = card.effect !== 'rush';
+      // rush/doubleblade: 召喚酔いなし
+      const hasRush = card.effect === 'rush' || card.effect === 'doubleblade';
+      card.combat.summonedThisTurn = !hasRush;
       targetSlot.occupiedByCardId = card.id;
       reflowHand(card.owner);
+      applyBoardEffects();
 
       if (card.effect === 'swap') {
         performSwapEffect(card);
@@ -440,6 +463,18 @@ export function performOverrideSummon(card, targetSlot) {
       }
       if (card.effect === 'doublecenter' && card.fieldSlotIndex === 2) {
         performDoubleCenterAttack(card, matchIdAtStart);
+        return;
+      }
+      if (card.effect === 'offering' && card.owner === 'player') {
+        performOfferingEffect(card);
+        return;
+      }
+      if (card.effect === 'steal') {
+        performStealEffect(card, matchIdAtStart);
+        return;
+      }
+      if (card.effect === 'harakiri') {
+        performHarakiriEffect(card, matchIdAtStart);
         return;
       }
 
@@ -556,6 +591,20 @@ export function resolveSwipeAttack(attacker, direction) {
     effectDamageList.push({ targetOwner: attacker.owner, amount: 2, label: 'REVENGE -2', color: '#e060ff' });
   }
 
+  // deathcurse: 戦闘で破壊されたとき、勝利したカードの基本攻撃力を永続 -2（引き分けは対象外）
+  if (defenderLost && !attackerLost && defender.effect === 'deathcurse') {
+    attacker.combat.baseAttackLeft  = Math.max(0, attacker.combat.baseAttackLeft  - 2);
+    attacker.combat.baseAttackRight = Math.max(0, attacker.combat.baseAttackRight - 2);
+    addDamageText(attacker.x, attacker.y - 60, 'CURSE! -2', '#a020e0');
+    triggerScreenShake(4, 130);
+  }
+  if (attackerLost && !defenderLost && attacker.effect === 'deathcurse') {
+    defender.combat.baseAttackLeft  = Math.max(0, defender.combat.baseAttackLeft  - 2);
+    defender.combat.baseAttackRight = Math.max(0, defender.combat.baseAttackRight - 2);
+    addDamageText(defender.x, defender.y - 60, 'CURSE! -2', '#a020e0');
+    triggerScreenShake(4, 130);
+  }
+
   attacker.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
   defender.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
   triggerScreenShake(6, 170);
@@ -598,8 +647,116 @@ export function resolveSwipeAttack(attacker, direction) {
         gameState.interactionLock = false;
       }
       recomputeSlotOccupancy();
+      applyBoardEffects();
     }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
+}
+
+// ===== offering / steal / harakiri =====
+
+// offering効果: プレイヤーが「KEEP」か「OFFER（相手へ譲渡）」を選ぶオーバーレイを起動
+function performOfferingEffect(card) {
+  gameState.offeringChoice.active = true;
+  gameState.offeringChoice.cardId = card.id;
+  // interactionLock は confirmOfferingChoice で解除
+}
+
+// offering 選択結果を受けて実行（input.js から呼ぶ）
+export function confirmOfferingChoice(giveToOpponent) {
+  const card = getCardById(gameState.offeringChoice.cardId);
+  gameState.offeringChoice.active = false;
+  gameState.offeringChoice.cardId = null;
+  if (card && giveToOpponent) {
+    card.owner = card.owner === 'player' ? 'enemy' : 'player';
+    applyBoardEffects();
+  }
+  gameState.interactionLock = false;
+}
+
+// steal効果: 隣接する敵カードの所有権を得る（2択の場合は選択UI を起動）
+function performStealEffect(card) {
+  const slotIdx = card.fieldSlotIndex;
+  const opponent = card.owner === 'player' ? 'enemy' : 'player';
+
+  const leftCand  = slotIdx > 0                   ? getCardAtSlot(slotIdx - 1) : null;
+  const rightCand = slotIdx < MAX_FIELD_SLOTS - 1  ? getCardAtSlot(slotIdx + 1) : null;
+
+  const leftTarget  = leftCand  && leftCand.owner  === opponent ? leftCand  : null;
+  const rightTarget = rightCand && rightCand.owner === opponent ? rightCand : null;
+
+  if (!leftTarget && !rightTarget) {
+    gameState.interactionLock = false;
+    return;
+  }
+
+  if (leftTarget && rightTarget) {
+    if (card.owner === 'player') {
+      // プレイヤー: 選択 UI を起動
+      gameState.stealChoice.active = true;
+      gameState.stealChoice.cardId = card.id;
+      gameState.stealChoice.leftId  = leftTarget.id;
+      gameState.stealChoice.rightId = rightTarget.id;
+      return; // 選択後に confirmStealChoice がロック解除
+    }
+    // AI: 合計攻撃力が高い方を優先
+    const leftPow  = leftTarget.combat.baseAttackLeft  + leftTarget.combat.baseAttackRight;
+    const rightPow = rightTarget.combat.baseAttackLeft + rightTarget.combat.baseAttackRight;
+    stealCard(leftPow >= rightPow ? leftTarget : rightTarget, card.owner);
+  } else {
+    stealCard(leftTarget ?? rightTarget, card.owner);
+  }
+
+  applyBoardEffects();
+  gameState.interactionLock = false;
+}
+
+// 所有権変更の共通処理
+function stealCard(target, newOwner) {
+  target.owner = newOwner;
+  addDamageText(target.x, target.y - 60, 'STOLEN!', '#ffd700');
+  triggerScreenShake(5, 140);
+}
+
+// steal 選択結果を受けて実行（input.js から呼ぶ）
+export function confirmStealChoice(targetCardId) {
+  const target = getCardById(targetCardId);
+  const stealCardObj = getCardById(gameState.stealChoice.cardId);
+  gameState.stealChoice.active = false;
+  gameState.stealChoice.cardId = null;
+  gameState.stealChoice.leftId  = null;
+  gameState.stealChoice.rightId = null;
+  if (target && stealCardObj) {
+    stealCard(target, stealCardObj.owner);
+    applyBoardEffects();
+  }
+  gameState.interactionLock = false;
+}
+
+// harakiri効果: 召喚ターンに自陣の手札・フィールド全カード（自身含む）を破壊
+function performHarakiriEffect(card, matchIdAtStart) {
+  const owner = card.owner;
+  const nowMs = performance.now();
+
+  addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20, 'HARAKIRI!', '#ff4040');
+  triggerScreenShake(12, 350);
+
+  // フィールドカード（自身含む）: アニメーション付き破棄
+  getFieldCards(owner).forEach((c) => markCardDestroyed(c, nowMs));
+
+  // 手札カード: 即座に除外
+  getHandCards(owner).forEach((c) => {
+    c.ui.destroyStartMs = nowMs;
+    c.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
+    c.ui.pendingRemoval = true;
+    c.zone = 'destroyed';
+  });
+
+  setTimeout(() => {
+    if (gameState.matchId !== matchIdAtStart) return;
+    recomputeSlotOccupancy();
+    applyBoardEffects();
+    gameState.interactionLock = false;
+  }, DESTROY_ANIMATION_MS + 60);
 }
 
 export function finishGame(winner) {
@@ -630,9 +787,11 @@ export function resolveDirectAttack(attacker) {
 
   const targetOwner = attacker.owner === 'player' ? 'enemy' : 'player';
   // strike2/strike3: 直接攻撃ダメージを増加
+  // doubleblade: 通常ダメージ、ただし自分にも同量ダメージ
   const directDamage = attacker.effect === 'strike3' ? 3
     : attacker.effect === 'strike2' ? 2
     : 1;
+  const selfDamage = attacker.effect === 'doubleblade' ? directDamage : 0;
 
   attacker.combat.hasActedThisTurn = true;
   attacker.ui.hitFlashUntilMs = performance.now() + HIT_FLASH_MS;
@@ -657,9 +816,49 @@ export function resolveDirectAttack(attacker) {
         finishGame(attacker.owner);
         return;
       }
+      // doubleblade: 自分にも同量のダメージ
+      if (selfDamage > 0) {
+        const selfOwner = attacker.owner;
+        gameState.hp[selfOwner] = Math.max(0, gameState.hp[selfOwner] - selfDamage);
+        triggerHpPulse(selfOwner, 560);
+        const selfHpPos = getHpBadgePosition(selfOwner);
+        addDamageText(selfHpPos.x, selfHpPos.y + 56, `HP ${gameState.hp[selfOwner]}`, '#ffe6a7');
+        addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 24, `RECOIL -${selfDamage}`, '#ff9060');
+        if (gameState.hp[selfOwner] <= 0) {
+          finishGame(selfOwner === 'player' ? 'enemy' : 'player');
+          return;
+        }
+      }
       gameState.interactionLock = false;
     }, 110);
   }, DIRECT_ATTACK_HIT_MS);
+}
+
+// ===== ボード効果の再計算 =====
+
+// 全フィールドカードの有効攻撃力をベース値にリセットし、永続オーラ効果を再適用する。
+// weakaura 破壊後・召喚後・所有権変更後などボード状態が変わるたびに呼ぶ。
+export function applyBoardEffects() {
+  const fieldCards = gameState.cards.filter((c) => c.zone === 'field' && !c.ui.pendingRemoval);
+
+  // まず全カードをベース値にリセット
+  fieldCards.forEach((c) => {
+    c.combat.attackLeft  = c.combat.baseAttackLeft;
+    c.combat.attackRight = c.combat.baseAttackRight;
+  });
+
+  // weakaura: 場にあるあいだ、隣接カードの左右攻撃力を -1（最小 0）
+  fieldCards.filter((c) => c.effect === 'weakaura').forEach((aura) => {
+    const idx = aura.fieldSlotIndex;
+    if (idx === null) return;
+    [-1, 1].forEach((delta) => {
+      const neighbor = getCardAtSlot(idx + delta);
+      if (neighbor) {
+        neighbor.combat.attackLeft  = Math.max(0, neighbor.combat.attackLeft  - 1);
+        neighbor.combat.attackRight = Math.max(0, neighbor.combat.attackRight - 1);
+      }
+    });
+  });
 }
 
 // ===== 召喚時効果 =====
@@ -784,6 +983,7 @@ function performDoubleCenterAttack(card, matchIdAtStart) {
         gameState.interactionLock = false;
       }
       recomputeSlotOccupancy();
+      applyBoardEffects();
     }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
 }

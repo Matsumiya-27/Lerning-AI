@@ -13,7 +13,13 @@
     "edge2":        "端スロット（0・4）のカードへの攻撃力+2。",
     "edgewin":      "端スロット（0・4）のカードへの攻撃時、必ず勝利する。防御時は通常通り。",
     "swap":         "召喚成功時、両隣のカードを入れ替える（片方のみでも移動）。",
-    "doublecenter": "中央（スロット2）に配置した場合、召喚ターンに左右両方へ同時攻撃する。"
+    "doublecenter": "中央（スロット2）に配置した場合、召喚ターンに左右両方へ同時攻撃する。",
+    "doubleblade":  "召喚酔いなし。直接攻撃時、与えたダメージと同量を自分も受ける（RECOIL）。",
+    "weakaura":     "場にあるあいだ、両隣のカードの左右攻撃力を各-1する永続オーラ。破壊されると解除。",
+    "offering":     "召喚成功時、プレイヤーはこのカードを相手へ譲渡するか選択できる。",
+    "steal":        "召喚成功時、隣接する敵カード1枚の所有権を得る（2択の場合は選択）。",
+    "deathcurse":   "戦闘で破壊されたとき、倒したカードの基本攻撃力を永続 -2 する。",
+    "harakiri":     "召喚成功時、自陣の手札・フィールドのカードを全て破壊（自身含む）。攻撃力 6/6。"
   },
   "catalog": [
     { "id": "r1_L2R3",               "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": null },
@@ -22,6 +28,12 @@
     { "id": "r1_L3R1_rush",          "rank": 1, "attackLeft": 3, "attackRight": 1, "effect": "rush" },
     { "id": "r1_L2R3_edge1",         "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": "edge1" },
     { "id": "r1_L3R2_edge1",         "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": "edge1" },
+    { "id": "r1_L2R3_doubleblade",   "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": "doubleblade" },
+    { "id": "r1_L3R2_doubleblade",   "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": "doubleblade" },
+    { "id": "r1_L2R3_weakaura",      "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": "weakaura" },
+    { "id": "r1_L3R2_weakaura",      "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": "weakaura" },
+    { "id": "r1_L2R3_offering",      "rank": 1, "attackLeft": 2, "attackRight": 3, "effect": "offering" },
+    { "id": "r1_L3R2_offering",      "rank": 1, "attackLeft": 3, "attackRight": 2, "effect": "offering" },
 
     { "id": "r2_L3R4",               "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": null },
     { "id": "r2_L4R3",               "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": null },
@@ -32,6 +44,10 @@
     { "id": "r2_L4R3_edge2",         "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": "edge2" },
     { "id": "r2_L3R4_swap",          "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": "swap" },
     { "id": "r2_L4R3_swap",          "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": "swap" },
+    { "id": "r2_L3R4_doubleblade",   "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": "doubleblade" },
+    { "id": "r2_L4R3_doubleblade",   "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": "doubleblade" },
+    { "id": "r2_L3R4_deathcurse",    "rank": 2, "attackLeft": 3, "attackRight": 4, "effect": "deathcurse" },
+    { "id": "r2_L4R3_deathcurse",    "rank": 2, "attackLeft": 4, "attackRight": 3, "effect": "deathcurse" },
 
     { "id": "r3_L4R6",               "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": null },
     { "id": "r3_L5R5",               "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": null },
@@ -42,6 +58,9 @@
     { "id": "r3_L6R3_strike3",       "rank": 3, "attackLeft": 6, "attackRight": 3, "effect": "strike3" },
     { "id": "r3_L4R6_edgewin",       "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": "edgewin" },
     { "id": "r3_L6R4_edgewin",       "rank": 3, "attackLeft": 6, "attackRight": 4, "effect": "edgewin" },
-    { "id": "r3_L5R5_doublecenter",  "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": "doublecenter" }
+    { "id": "r3_L5R5_doublecenter",  "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": "doublecenter" },
+    { "id": "r3_L5R5_steal",         "rank": 3, "attackLeft": 5, "attackRight": 5, "effect": "steal" },
+    { "id": "r3_L4R6_steal",         "rank": 3, "attackLeft": 4, "attackRight": 6, "effect": "steal" },
+    { "id": "r3_L6R6_harakiri",      "rank": 3, "attackLeft": 6, "attackRight": 6, "effect": "harakiri" }
   ]
 }

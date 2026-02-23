@@ -8,6 +8,7 @@ import {
   ctx, gameState, slotCenters,
   getHandCards, getFieldCards, getCardById,
   getHpBadgePosition, getSummonSelectionButtons, getDiscardPromptButtons,
+  getOfferingChoiceButtons, getStealChoiceButtons,
 } from './state.js';
 import {
   canUseEndTurnButton, getSelectedTributeCards, canConfirmSummonSelection,
@@ -330,12 +331,18 @@ function drawCards(nowMs) {
         strike2: '#e05020', strike3: '#ff2800',
         edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
         swap: '#c07800', doublecenter: '#b000b0',
+        doubleblade: '#c04000', weakaura: '#20a080',
+        offering: '#8060e0', steal: '#e0a000',
+        deathcurse: '#702090', harakiri: '#cc0000',
       };
       const effectLabel = {
         rush: 'RUSH', pierce: 'PIERCE', revenge: 'RVNG',
         strike2: 'STR×2', strike3: 'STR×3',
         edge1: 'EDG+1', edge2: 'EDG+2', edgewin: 'EWIN',
         swap: 'SWAP', doublecenter: '2HIT',
+        doubleblade: '2BLD', weakaura: 'AURA',
+        offering: 'GIFT', steal: 'STEAL',
+        deathcurse: 'CURSE', harakiri: 'HRKR',
       };
       ctx.font = 'bold 9px sans-serif';
       ctx.fillStyle = effectColor[card.effect] || '#888';
@@ -343,10 +350,13 @@ function drawCards(nowMs) {
     }
 
     ctx.font = 'bold 20px sans-serif';
-    ctx.fillStyle = '#174f9b';
+    // weakaura デバフ中は攻撃値をオレンジで表示
+    const leftDebuffed  = card.combat.baseAttackLeft  !== undefined && card.combat.attackLeft  < card.combat.baseAttackLeft;
+    const rightDebuffed = card.combat.baseAttackRight !== undefined && card.combat.attackRight < card.combat.baseAttackRight;
+    ctx.fillStyle = leftDebuffed ? '#e07020' : '#174f9b';
     ctx.fillText(String(card.combat.attackLeft), left + 10, centerY + 7);
 
-    ctx.fillStyle = '#9b1f1f';
+    ctx.fillStyle = rightDebuffed ? '#e07020' : '#9b1f1f';
     const rightText = String(card.combat.attackRight);
     const rightWidth = ctx.measureText(rightText).width;
     ctx.fillText(rightText, left + width - 12 - rightWidth, centerY + 7);
@@ -509,6 +519,109 @@ function drawTurnBanner(nowMs) {
   ctx.restore();
 }
 
+function drawOfferingChoiceOverlay() {
+  if (!gameState.offeringChoice.active) return;
+  const { keep, offer } = getOfferingChoiceButtons();
+  const cx = CANVAS_WIDTH / 2;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 12, 20, 0.72)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  ctx.fillStyle = '#0f1828';
+  ctx.strokeStyle = '#8060e0';
+  ctx.lineWidth = 2;
+  ctx.fillRect(260, 300, 440, 170);
+  ctx.strokeRect(260, 300, 440, 170);
+
+  ctx.fillStyle = '#eaf1ff';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('OFFERING', cx, 334);
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = '#c8d6f0';
+  ctx.fillText('このカードを相手に譲渡しますか？', cx, 362);
+
+  // KEEP ボタン
+  ctx.fillStyle = '#274a7f';
+  ctx.strokeStyle = '#7db5ff';
+  ctx.lineWidth = 2;
+  ctx.fillRect(keep.x, keep.y, keep.width, keep.height);
+  ctx.strokeRect(keep.x, keep.y, keep.width, keep.height);
+  ctx.fillStyle = '#edf4ff';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('KEEP', keep.x + keep.width / 2, keep.y + 27);
+
+  // OFFER ボタン
+  ctx.fillStyle = '#4a2a33';
+  ctx.strokeStyle = '#c18595';
+  ctx.fillRect(offer.x, offer.y, offer.width, offer.height);
+  ctx.strokeRect(offer.x, offer.y, offer.width, offer.height);
+  ctx.fillStyle = '#ffe5ea';
+  ctx.fillText('OFFER', offer.x + offer.width / 2, offer.y + 27);
+
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
+function drawStealChoiceOverlay() {
+  if (!gameState.stealChoice.active) return;
+  const { left: lBtn, right: rBtn } = getStealChoiceButtons();
+  const cx = CANVAS_WIDTH / 2;
+  const { leftId, rightId } = gameState.stealChoice;
+  const leftCard  = leftId  ? gameState.cards.find((c) => c.id === leftId)  : null;
+  const rightCard = rightId ? gameState.cards.find((c) => c.id === rightId) : null;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8, 12, 20, 0.72)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  ctx.fillStyle = '#0f1828';
+  ctx.strokeStyle = '#e0a000';
+  ctx.lineWidth = 2;
+  ctx.fillRect(240, 290, 480, 195);
+  ctx.strokeRect(240, 290, 480, 195);
+
+  ctx.fillStyle = '#fff4cc';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('STEAL — 奪うカードを選択', cx, 324);
+
+  // 左カード情報
+  if (leftCard) {
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#d8e0f5';
+    ctx.fillText(`← R${leftCard.rank}  ${leftCard.combat.attackLeft}/${leftCard.combat.attackRight}`, cx - 90, 358);
+  }
+  // 右カード情報
+  if (rightCard) {
+    ctx.font = '13px sans-serif';
+    ctx.fillStyle = '#d8e0f5';
+    ctx.fillText(`R${rightCard.rank}  ${rightCard.combat.attackLeft}/${rightCard.combat.attackRight} →`, cx + 90, 358);
+  }
+
+  // LEFT ボタン
+  ctx.fillStyle = '#274a7f';
+  ctx.strokeStyle = '#7db5ff';
+  ctx.lineWidth = 2;
+  ctx.fillRect(lBtn.x, lBtn.y, lBtn.width, lBtn.height);
+  ctx.strokeRect(lBtn.x, lBtn.y, lBtn.width, lBtn.height);
+  ctx.fillStyle = '#edf4ff';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('← LEFT', lBtn.x + lBtn.width / 2, lBtn.y + 27);
+
+  // RIGHT ボタン
+  ctx.fillStyle = '#274a7f';
+  ctx.strokeStyle = '#7db5ff';
+  ctx.fillRect(rBtn.x, rBtn.y, rBtn.width, rBtn.height);
+  ctx.strokeRect(rBtn.x, rBtn.y, rBtn.width, rBtn.height);
+  ctx.fillStyle = '#edf4ff';
+  ctx.fillText('RIGHT →', rBtn.x + rBtn.width / 2, rBtn.y + 27);
+
+  ctx.textAlign = 'left';
+  ctx.restore();
+}
+
 function drawDiscardPrompt() {
   if (!gameState.discardPrompt.active) {
     return;
@@ -588,6 +701,8 @@ export function draw(nowMs) {
   drawCoinToss(nowMs);
   drawTurnBanner(nowMs);
   drawSummonSelectionOverlay();
+  drawOfferingChoiceOverlay();
+  drawStealChoiceOverlay();
   drawDiscardPrompt();
 
   if (nowMs < gameState.fx.koFlashUntilMs) {

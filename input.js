@@ -4,7 +4,7 @@ import {
   canvas, gameState, slotCenters,
   getCardById, getFieldCards, getSlotOccupant,
   startMoveAnimation, reflowHand, getSummonSelectionButtons,
-  getDiscardPromptButtons,
+  getDiscardPromptButtons, getOfferingChoiceButtons, getStealChoiceButtons,
 } from './state.js';
 import {
   cancelSummonSelection, canConfirmSummonSelection, confirmSummonSelection,
@@ -13,6 +13,7 @@ import {
   resolveSwipeAttack, resolveDirectAttack,
   getSummonTributeOptions, chooseBestTributeOptionForTarget,
   getOverrideSummonSlots, performOverrideSummon, isOverrideSummonAvailable,
+  confirmOfferingChoice, confirmStealChoice,
 } from './cards.js';
 import { endCurrentTurn, confirmDiscardPrompt } from './turn.js';
 
@@ -65,6 +66,29 @@ export function onPointerDown(event) {
 
   event.preventDefault();
   const point = getCanvasPoint(event);
+
+  // offering 選択オーバーレイ
+  if (gameState.offeringChoice.active) {
+    const { keep, offer } = getOfferingChoiceButtons();
+    if (pointInRect(point.x, point.y, keep)) {
+      confirmOfferingChoice(false);
+    } else if (pointInRect(point.x, point.y, offer)) {
+      confirmOfferingChoice(true);
+    }
+    return;
+  }
+
+  // steal 選択オーバーレイ
+  if (gameState.stealChoice.active) {
+    const { left: lBtn, right: rBtn } = getStealChoiceButtons();
+    const { leftId, rightId } = gameState.stealChoice;
+    if (leftId && pointInRect(point.x, point.y, lBtn)) {
+      confirmStealChoice(leftId);
+    } else if (rightId && pointInRect(point.x, point.y, rBtn)) {
+      confirmStealChoice(rightId);
+    }
+    return;
+  }
 
   // 全破棄ダイアログが表示中はボタンのみ受け付ける
   if (gameState.discardPrompt.active) {
@@ -206,15 +230,8 @@ export function onPointerUp(event) {
           gameState.interactionLock = false;
         });
       } else if (card.rank === 1) {
-        startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
-          card.zone = 'field';
-          card.handIndex = null;
-          card.fieldSlotIndex = targetSlot.id;
-          card.combat.summonedThisTurn = true;
-          targetSlot.occupiedByCardId = card.id;
-          reflowHand('player');
-          gameState.interactionLock = false;
-        });
+        // performSummon 経由で召喚酔い・rush・その他効果を正しく処理する
+        performSummon(card, targetSlot, []);
       } else {
         const tributeOptions = getSummonTributeOptions('player', card.rank);
         const selected = chooseBestTributeOptionForTarget('player', tributeOptions, targetSlot.id);
