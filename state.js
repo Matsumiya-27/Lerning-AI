@@ -52,6 +52,18 @@ export const gameState = {
   result: {
     winner: null,
   },
+  // offering効果: 召喚時に相手へ譲渡するか選択するオーバーレイ
+  offeringChoice: {
+    active: false,
+    cardId: null,
+  },
+  // steal効果: 隣接する敵カードを2択で奪う選択オーバーレイ
+  stealChoice: {
+    active: false,
+    cardId: null,  // steal カード自身
+    leftId: null,  // 左候補の敵カードID
+    rightId: null, // 右候補の敵カードID
+  },
   discardPrompt: {
     active: false,
     owner: null, // 'player' | 'enemy'
@@ -236,6 +248,20 @@ export function getSummonSelectionButtons() {
   return {
     confirm: { x: 366, y: 590, width: 110, height: 44 },
     cancel: { x: 488, y: 590, width: 110, height: 44 },
+  };
+}
+
+export function getOfferingChoiceButtons() {
+  return {
+    keep:  { x: 330, y: 378, width: 130, height: 44 },
+    offer: { x: 500, y: 378, width: 130, height: 44 },
+  };
+}
+
+export function getStealChoiceButtons() {
+  return {
+    left:  { x: 330, y: 400, width: 130, height: 44 },
+    right: { x: 500, y: 400, width: 130, height: 44 },
   };
 }
 
