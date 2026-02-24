@@ -324,31 +324,6 @@ function drawCards(nowMs) {
     ctx.font = 'bold 12px sans-serif';
     ctx.fillText(rankLabel, left + 10, top + 18);
 
-    // 効果バッジ
-    if (card.effect) {
-      const effectColor = {
-        rush: '#2ca44e', pierce: '#c8a000', revenge: '#9040d0',
-        strike2: '#e05020', strike3: '#ff2800',
-        edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
-        swap: '#c07800', doublecenter: '#b000b0',
-        doubleblade: '#c04000', weakaura: '#20a080',
-        offering: '#8060e0', steal: '#e0a000',
-        deathcurse: '#702090', harakiri: '#cc0000',
-      };
-      const effectLabel = {
-        rush: 'RUSH', pierce: 'PIERCE', revenge: 'RVNG',
-        strike2: 'STR×2', strike3: 'STR×3',
-        edge1: 'EDG+1', edge2: 'EDG+2', edgewin: 'EWIN',
-        swap: 'SWAP', doublecenter: '2HIT',
-        doubleblade: '2BLD', weakaura: 'AURA',
-        offering: 'GIFT', steal: 'STEAL',
-        deathcurse: 'CURSE', harakiri: 'HRKR',
-      };
-      ctx.font = 'bold 9px sans-serif';
-      ctx.fillStyle = effectColor[card.effect] || '#888';
-      ctx.fillText(effectLabel[card.effect] || card.effect.toUpperCase(), left + 10, top + 31);
-    }
-
     ctx.font = 'bold 20px sans-serif';
     // weakaura デバフ中は攻撃値をオレンジで表示
     const leftDebuffed  = card.combat.baseAttackLeft  !== undefined && card.combat.attackLeft  < card.combat.baseAttackLeft;
@@ -360,6 +335,42 @@ function drawCards(nowMs) {
     const rightText = String(card.combat.attackRight);
     const rightWidth = ctx.measureText(rightText).width;
     ctx.fillText(rightText, left + width - 12 - rightWidth, centerY + 7);
+
+    // 効果テキスト（日本語）: 攻撃値とステータス表示の間に中央配置
+    if (card.effect) {
+      const effectColor = {
+        rush: '#2ca44e', pierce: '#c8a000', revenge: '#9040d0',
+        strike2: '#e05020', strike3: '#ff2800',
+        edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
+        swap: '#c07800', doublecenter: '#b000b0',
+        doubleblade: '#c04000', weakaura: '#20a080',
+        offering: '#8060e0', steal: '#e0a000',
+        deathcurse: '#702090', harakiri: '#cc0000',
+      };
+      const effectJp = {
+        rush:         '召喚即攻撃可',
+        pierce:       '超過ダメージ',
+        revenge:      '撃破時に反撃',
+        strike2:      '2回連続攻撃',
+        strike3:      '3回連続攻撃',
+        edge1:        '端で攻撃+1',
+        edge2:        '端で攻撃+2',
+        edgewin:      '端で必ず勝つ',
+        swap:         '隣を入れ替え',
+        doublecenter: '両隣を同時攻撃',
+        doubleblade:  '諸刃の剣',
+        weakaura:     '隣の敵を弱体化',
+        offering:     '相手に贈与可',
+        steal:        '隣の敵を奪取',
+        deathcurse:   '破壊時に呪い',
+        harakiri:     '全カード破壊',
+      };
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillStyle = effectColor[card.effect] || '#888';
+      ctx.textAlign = 'center';
+      ctx.fillText(effectJp[card.effect] || card.effect, centerX, centerY + 44);
+      ctx.textAlign = 'left';
+    }
 
     // ステータス表示はフィールドカードのみ（手札では非表示）
     if (card.zone === 'field') {
