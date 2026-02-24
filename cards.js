@@ -321,8 +321,8 @@ export function performSummon(card, targetSlot, tributeIds) {
     card.zone = 'field';
     card.handIndex = null;
     card.fieldSlotIndex = targetSlot.id;
-    // rush/doubleblade: 召喚酔いなし（直接攻撃を同ターンに使用可能）
-    const hasRush = card.effect === 'rush' || card.effect === 'doubleblade';
+    // rush: 召喚酔いなし（直接攻撃を同ターンに使用可能）
+    const hasRush = card.effect === 'rush';
     card.combat.summonedThisTurn = !hasRush;
     targetSlot.occupiedByCardId = card.id;
     reflowHand(card.owner);
@@ -449,8 +449,8 @@ export function performOverrideSummon(card, targetSlot) {
       card.zone = 'field';
       card.handIndex = null;
       card.fieldSlotIndex = targetSlot.id;
-      // rush/doubleblade: 召喚酔いなし
-      const hasRush = card.effect === 'rush' || card.effect === 'doubleblade';
+      // rush: 召喚酔いなし
+      const hasRush = card.effect === 'rush';
       card.combat.summonedThisTurn = !hasRush;
       targetSlot.occupiedByCardId = card.id;
       reflowHand(card.owner);
@@ -732,24 +732,20 @@ export function confirmStealChoice(targetCardId) {
   gameState.interactionLock = false;
 }
 
-// harakiri効果: 召喚ターンに自陣の手札・フィールド全カード（自身含む）を破壊
+// harakiri効果: 召喚ターンに全フィールドカード（自陣・敵陣含む）と自陣手札を破壊
 function performHarakiriEffect(card, matchIdAtStart) {
   const owner = card.owner;
+  const opponent = owner === 'player' ? 'enemy' : 'player';
   const nowMs = performance.now();
 
   addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20, 'HARAKIRI!', '#ff4040');
   triggerScreenShake(12, 350);
 
-  // フィールドカード（自身含む）: アニメーション付き破棄
-  getFieldCards(owner).forEach((c) => markCardDestroyed(c, nowMs));
+  // フィールドカード（自陣・敵陣・自身含む全て）: アニメーション付き破棄
+  [...getFieldCards(owner), ...getFieldCards(opponent)].forEach((c) => markCardDestroyed(c, nowMs));
 
-  // 手札カード: 即座に除外
-  getHandCards(owner).forEach((c) => {
-    c.ui.destroyStartMs = nowMs;
-    c.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
-    c.ui.pendingRemoval = true;
-    c.zone = 'destroyed';
-  });
+  // 自陣手札カード: 破棄
+  getHandCards(owner).forEach((c) => markCardDestroyed(c, nowMs));
 
   setTimeout(() => {
     if (gameState.matchId !== matchIdAtStart) return;
@@ -757,6 +753,21 @@ function performHarakiriEffect(card, matchIdAtStart) {
     applyBoardEffects();
     gameState.interactionLock = false;
   }, DESTROY_ANIMATION_MS + 60);
+}
+
+// ===== デバッグユーティリティ =====
+
+// プレイヤー手札の左端カードを指定スペックに書き換える（デバッグ用）
+export function replaceLeftmostHandCard(owner, rank, effect, attackLeft, attackRight) {
+  const handCards = getHandCards(owner).sort((a, b) => (a.handIndex ?? 0) - (b.handIndex ?? 0));
+  if (handCards.length === 0) return;
+  const target = handCards[0];
+  target.rank = rank;
+  target.effect = effect;
+  target.combat.attackLeft = attackLeft;
+  target.combat.attackRight = attackRight;
+  target.combat.baseAttackLeft = attackLeft;
+  target.combat.baseAttackRight = attackRight;
 }
 
 export function finishGame(winner) {
@@ -883,7 +894,8 @@ function performSwapEffect(summonCard) {
     startMoveAnimation(leftCard,  rSlot.x, rSlot.y, null);
     startMoveAnimation(rightCard, lSlot.x, lSlot.y, null);
   } else if (leftCard) {
-    // 左のみ → 右の空スロットへ移動
+    // 左のみ → 右の空スロットへ移動（右端に空きスロットがなければ何もしない）
+    if (slotIdx + 1 >= MAX_FIELD_SLOTS) return;
     const lSlot = slotCenters[slotIdx - 1];
     const rSlot = slotCenters[slotIdx + 1];
     leftCard.fieldSlotIndex = slotIdx + 1;
@@ -891,7 +903,8 @@ function performSwapEffect(summonCard) {
     rSlot.occupiedByCardId = leftCard.id;
     startMoveAnimation(leftCard, rSlot.x, rSlot.y, null);
   } else {
-    // 右のみ → 左の空スロットへ移動
+    // 右のみ → 左の空スロットへ移動（左端に空きスロットがなければ何もしない）
+    if (slotIdx - 1 < 0) return;
     const lSlot = slotCenters[slotIdx - 1];
     const rSlot = slotCenters[slotIdx + 1];
     rightCard.fieldSlotIndex = slotIdx - 1;
