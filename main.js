@@ -3,6 +3,7 @@ import { canvas, resetButton, updateAnimations } from './state.js';
 import { resetGame, updateTurnFlow } from './turn.js';
 import { draw } from './render.js';
 import { onPointerDown, onPointerMove, onPointerUp } from './input.js';
+import { replaceLeftmostHandCard } from './cards.js';
 
 // ===== ゲームループ =====
 
@@ -21,6 +22,17 @@ canvas.addEventListener('pointerup', onPointerUp);
 canvas.addEventListener('pointercancel', onPointerUp);
 
 resetButton.addEventListener('click', resetGame);
+
+const handEditButton = document.getElementById('handEditButton');
+const handEditSelect = document.getElementById('handEditSelect');
+handEditButton.addEventListener('click', () => {
+  const parts = handEditSelect.value.split('-');
+  const rank = parseInt(parts[0], 10);
+  const effect = parts[1] === 'null' ? null : parts[1];
+  const al = parseInt(parts[2], 10);
+  const ar = parseInt(parts[3], 10);
+  replaceLeftmostHandCard('player', rank, effect, al, ar);
+});
 
 // ===== 起動 =====
 
