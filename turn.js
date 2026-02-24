@@ -16,6 +16,7 @@ import {
   isPlayerMainTurn, canOwnerAct,
 } from './cards.js';
 import { executeEnemyMainAction, aiShouldDiscardHand } from './ai.js';
+import { shuffleDeck } from './deck.js';
 
 export function applyDrawPhase(owner) {
   const handCountAtStart = getHandCards(owner).length;
@@ -169,6 +170,8 @@ export function startCoinToss() {
 
 export function resetGame() {
   gameState.matchId += 1;
+  // プレイヤーのデッキ山を再構築（シャッフルして積み直す）
+  gameState.playerDeckPile = shuffleDeck();
   buildInitialCards();
   gameState.interactionLock = false;
   gameState.activePointer = null;

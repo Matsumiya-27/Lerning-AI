@@ -129,24 +129,124 @@
 
       /* ===== デッキ編集画面 ===== */
       #screen-edit.active {
-        min-height: 100vh;
+        height: 100vh;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
+      }
+      .db-main {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+        min-height: 0;
+      }
+      .db-deck-panel {
+        width: 33.33%;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid #3c4863;
+        overflow: hidden;
+      }
+      .db-collection-panel {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .db-panel-head {
+        padding: 10px 14px;
+        border-bottom: 1px solid #3c4863;
+        font-weight: bold;
+        font-size: 14px;
+        flex-shrink: 0;
+        color: #ffd24a;
+      }
+      .db-grid {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-content: flex-start;
+      }
+      .db-bar {
+        height: 12.5vh;
+        border-top: 1px solid #3c4863;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        gap: 16px;
+        flex-shrink: 0;
+        background: #151c2e;
+      }
+      .db-count-info {
+        font-size: 15px;
+        font-weight: bold;
+        color: #ffd24a;
+      }
+      .db-hint {
+        font-size: 12px;
+        color: #6a7a9a;
+        margin-left: auto;
+      }
+      /* ── カード要素 ── */
+      .db-card {
+        width: 96px;
+        height: 138px;
+        border-radius: 8px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        padding: 7px 6px 6px;
+        box-sizing: border-box;
+        position: relative;
+        user-select: none;
+        transition: filter 0.12s;
+      }
+      .db-card:hover {
+        filter: brightness(1.22);
+      }
+      .db-card-rank {
+        font-size: 9px;
+        font-weight: bold;
+        color: #8aafdd;
+        letter-spacing: 0.06em;
+        margin-bottom: 4px;
+      }
+      .db-card-effect {
+        font-size: 11px;
+        font-weight: bold;
+        line-height: 1.3;
+        flex: 1;
+        word-break: keep-all;
+      }
+      .db-card-stats {
+        font-size: 10px;
+        color: #c0d0e8;
+        margin-top: 4px;
+      }
+      .db-card-total {
+        font-size: 9px;
+        color: #7a8aaa;
+        margin-top: 1px;
+      }
+      .db-card-badge {
+        position: absolute;
+        bottom: 5px;
+        right: 5px;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.78);
+        border: 1.5px solid #3a5a90;
+        display: flex;
         align-items: center;
         justify-content: center;
-        gap: 32px;
-      }
-      .edit-heading {
-        margin: 0;
-        font-size: 40px;
-        letter-spacing: 0.05em;
-      }
-      .edit-placeholder {
-        font-size: 16px;
-        color: #7a8aab;
-        border: 1px dashed #3c4863;
-        border-radius: 10px;
-        padding: 48px 80px;
+        font-size: 13px;
+        font-weight: bold;
       }
 
       /* ===== レスポンシブ（対戦画面） ===== */
@@ -191,30 +291,30 @@
             <button id="handEditButton" type="button">Hand Edit</button>
             <select id="handEditSelect">
               <optgroup label="─ RANK 1 ─">
-                <option value="1-null-3-2">R1 Plain 3/2</option>
+                <option value="1-null-3-3">R1 Plain 3/3</option>
                 <option value="1-rush-2-2">R1 RUSH 2/2</option>
                 <option value="1-edge1-3-2">R1 EDG+1 3/2</option>
-                <option value="1-doubleblade-3-2">R1 2BLD 3/2</option>
-                <option value="1-weakaura-3-2">R1 AURA 3/2</option>
-                <option value="1-offering-3-2">R1 GIFT 3/2</option>
+                <option value="1-doubleblade-2-3">R1 2BLD 2/3</option>
+                <option value="1-weakaura-2-2">R1 AURA 2/2</option>
+                <option value="1-offering-3-3">R1 GIFT 3/3</option>
               </optgroup>
               <optgroup label="─ RANK 2 ─">
-                <option value="2-null-4-3">R2 Plain 4/3</option>
-                <option value="2-pierce-3-3">R2 PIERCE 3/3</option>
+                <option value="2-null-4-4">R2 Plain 4/4</option>
+                <option value="2-pierce-3-4">R2 PIERCE 3/4</option>
                 <option value="2-strike2-3-3">R2 STR×2 3/3</option>
                 <option value="2-edge2-4-3">R2 EDG+2 4/3</option>
                 <option value="2-swap-4-3">R2 SWAP 4/3</option>
-                <option value="2-doubleblade-4-3">R2 2BLD 4/3</option>
+                <option value="2-doubleblade-3-4">R2 2BLD 3/4</option>
                 <option value="2-deathcurse-4-3">R2 CURSE 4/3</option>
               </optgroup>
               <optgroup label="─ RANK 3 ─">
-                <option value="3-null-5-5">R3 Plain 5/5</option>
-                <option value="3-revenge-5-4">R3 RVNG 5/4</option>
-                <option value="3-strike3-5-4">R3 STR×3 5/4</option>
-                <option value="3-edgewin-5-5">R3 EWIN 5/5</option>
-                <option value="3-doublecenter-5-5">R3 2HIT 5/5</option>
-                <option value="3-steal-5-5">R3 STEAL 5/5</option>
-                <option value="3-harakiri-6-6">R3 HRKR 6/6</option>
+                <option value="3-null-6-6">R3 Plain 6/6</option>
+                <option value="3-revenge-4-6">R3 RVNG 4/6</option>
+                <option value="3-strike3-6-4">R3 STR×3 6/4</option>
+                <option value="3-edgewin-6-5">R3 EWIN 6/5</option>
+                <option value="3-doublecenter-6-5">R3 2HIT 6/5</option>
+                <option value="3-steal-4-6">R3 STEAL 4/6</option>
+                <option value="3-harakiri-7-7">R3 HRKR 7/7</option>
               </optgroup>
             </select>
           </div>
@@ -225,9 +325,25 @@
 
     <!-- ===== デッキ編集画面 ===== -->
     <div id="screen-edit" class="screen">
-      <h2 class="edit-heading">デッキ編集</h2>
-      <div class="edit-placeholder">準備中</div>
-      <button type="button" onclick="showScreen('title')">← タイトルへ戻る</button>
+      <div class="db-main">
+        <!-- 左1/3：現在のデッキ -->
+        <div class="db-deck-panel">
+          <div class="db-panel-head" id="db-deck-header">デッキ（0 / 30）</div>
+          <div class="db-grid" id="db-deck-grid"></div>
+        </div>
+        <!-- 右2/3：カード一覧 -->
+        <div class="db-collection-panel">
+          <div class="db-panel-head" style="color:#8aafdd;">カード一覧　クリックして追加</div>
+          <div class="db-grid" id="db-collection-grid"></div>
+        </div>
+      </div>
+      <!-- 下1/8：ユーティリティ -->
+      <div class="db-bar">
+        <button type="button" onclick="showScreen('title')">← タイトル</button>
+        <button type="button" id="db-reset-btn">サンプルに戻す</button>
+        <span class="db-count-info" id="db-count-label">0 / 30 枚</span>
+        <span class="db-hint">左パネルのカードをクリックで取り除く　／　1種につき最大3枚</span>
+      </div>
     </div>
 
     <!-- 画面切り替え（非モジュール：グローバルに公開） -->
@@ -239,6 +355,9 @@
         document.getElementById('screen-' + name).classList.add('active');
         if (name === 'game') {
           document.dispatchEvent(new CustomEvent('navigate-to-game'));
+        }
+        if (name === 'edit') {
+          document.dispatchEvent(new CustomEvent('navigate-to-edit'));
         }
       }
     </script>
