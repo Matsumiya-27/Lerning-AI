@@ -39,6 +39,8 @@ export const gameState = {
   cards: [],
   nextCardId: 0,
   interactionLock: false,
+  // プレイヤーのデッキ山（ゲーム開始時にデッキをシャッフルして積む。末尾から引く）
+  playerDeckPile: [],
   activePointer: null,
   summonSelection: {
     active: false,

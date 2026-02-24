@@ -4,6 +4,8 @@ import { resetGame, updateTurnFlow } from './turn.js';
 import { draw } from './render.js';
 import { onPointerDown, onPointerMove, onPointerUp } from './input.js';
 import { replaceLeftmostHandCard } from './cards.js';
+import { initDeck } from './deck.js';
+import { openDeckBuilder } from './deckbuilder.js';
 
 // ===== ゲームループ =====
 
@@ -37,6 +39,12 @@ handEditButton.addEventListener('click', () => {
 // 対戦画面に遷移したタイミングでゲームをリセット開始
 document.addEventListener('navigate-to-game', resetGame);
 
+// デッキ編集画面に遷移したタイミングでデッキビルダーを開く
+document.addEventListener('navigate-to-edit', openDeckBuilder);
+
 // ===== 起動 =====
+
+// デッキ初期化（サンプルデッキをセット）
+initDeck();
 
 requestAnimationFrame(loop);

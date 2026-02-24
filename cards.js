@@ -2,7 +2,8 @@
 import {
   STARTING_HAND, SHAKE_DURATION_MS, HIT_FLASH_MS,
   DESTROY_ANIMATION_MS, DIRECT_ATTACK_HIT_MS,
-  CANVAS_WIDTH, CANVAS_HEIGHT, RANK_ATTACK_MAX, EFFECT_RANK_TOTAL, MAX_FIELD_SLOTS,
+  CANVAS_WIDTH, CANVAS_HEIGHT, RANK_ATTACK_MAX, EFFECT_RANK_TOTAL, PLAIN_RANK_TOTAL,
+  MAX_FIELD_SLOTS,
 } from './constants.js';
 import {
   gameState, slotCenters, getHandCenter,
@@ -55,7 +56,10 @@ const RANK_EFFECTS = {
 };
 
 // 合計攻撃力を -1 する効果（カードの価値を効果で補う）
-const REDUCED_TOTAL_EFFECTS = new Set(['rush', 'pierce', 'revenge', 'strike2', 'strike3']);
+const REDUCED_TOTAL_EFFECTS = new Set(['rush', 'weakaura', 'pierce', 'strike2', 'revenge', 'strike3', 'steal']);
+
+// 常に左右対称の固定値になる効果（total/2 ずつ）
+const SYMMETRIC_EFFECTS = new Set(['rush', 'weakaura', 'offering', 'strike2', 'harakiri']);
 
 // ランクに対応する効果をランダムに決定（30%の確率で付与）
 function randomEffectForRank(rank) {
@@ -74,7 +78,7 @@ export function randomRank() {
 
 export function getRankTotalPower(rank) {
   if (rank === 2) return 7;
-  if (rank === 3) return 10;
+  if (rank === 3) return 11;
   return 5;
 }
 
@@ -92,15 +96,40 @@ export function drawRandomCardToHand(owner) {
   const handCards = getHandCards(owner);
   const handIndex = handCards.length;
   const center = getHandCenter(owner, handIndex, handIndex + 1);
-  const rank = randomRank();
-  const effect = randomEffectForRank(rank);
-  // harakiri: 壊滅的なデメリットの代わりに 6/6 の高スタッツ（R3合計 +2）
-  // REDUCED: rush/pierce 等は合計 -1
-  // それ以外: 標準合計
-  const total = effect === 'harakiri' ? 12
-    : (effect && REDUCED_TOTAL_EFFECTS.has(effect)) ? EFFECT_RANK_TOTAL[rank]
+
+  let rank;
+  let effect;
+
+  if (owner === 'player') {
+    // プレイヤー: デッキ山から引く。切れていれば何もしない
+    if (gameState.playerDeckPile.length === 0) return;
+    const drawn = gameState.playerDeckPile.pop();
+    rank = drawn.rank;
+    effect = drawn.effect;
+  } else {
+    // 敵: ランダム生成
+    rank = randomRank();
+    effect = randomEffectForRank(rank);
+  }
+
+  // ── 合計攻撃力の決定 ──
+  // harakiri: 特例 7/7 (合計14)
+  // plain(null) / offering: PLAIN_RANK_TOTAL（通常より+1、対称固定）
+  // REDUCED_TOTAL_EFFECTS: EFFECT_RANK_TOTAL（通常より-1）
+  // それ以外: getRankTotalPower（通常合計）
+  const total = effect === 'harakiri' ? 14
+    : (effect === null || effect === 'offering') ? PLAIN_RANK_TOTAL[rank]
+    : REDUCED_TOTAL_EFFECTS.has(effect) ? EFFECT_RANK_TOTAL[rank]
     : getRankTotalPower(rank);
-  const pair = randomAttackPair(total, RANK_ATTACK_MAX[rank]);
+
+  // ── 左右振り分け ──
+  // 対称効果（null/SYMMETRIC_EFFECTS）: total/2 ずつ固定
+  // それ以外: RANK_ATTACK_MAX の範囲内でランダム（弱寄り）
+  const isSymmetric = effect === null || SYMMETRIC_EFFECTS.has(effect);
+  const pair = isSymmetric
+    ? { left: total / 2, right: total / 2 }
+    : randomAttackPair(total, RANK_ATTACK_MAX[rank]);
+
   const card = createCard({
     id: gameState.nextCardId,
     owner,

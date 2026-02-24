@@ -33,9 +33,13 @@ export const END_TURN_UI = {
 };
 
 // ランクごとの片側攻撃値の最大値（合計値 - 最大値 が最小値になる）
-// R1: 2-3, R2: 3-4, R3: 4-6
+// R1: 2-3 (合計5), R2: 3-4 (合計7), R3: 5-6 (合計11) / デメリット合計10は4-6
 export const RANK_ATTACK_MAX = { 1: 3, 2: 4, 3: 6 };
 
 // 効果カードの合計攻撃力（標準より1低い。効果がその分を補う）
-// R1 rush: 4, R2 pierce: 6, R3 revenge: 9
-export const EFFECT_RANK_TOTAL = { 1: 4, 2: 6, 3: 9 };
+// R1 rush/weakaura: 4, R2 pierce/strike2: 6, R3 revenge/strike3/steal: 10
+export const EFFECT_RANK_TOTAL = { 1: 4, 2: 6, 3: 10 };
+
+// plainカード（効果なし）と offering の合計攻撃力（通常より+1、対称固定値）
+// R1: 3/3=6, R2: 4/4=8, R3: 6/6=12
+export const PLAIN_RANK_TOTAL = { 1: 6, 2: 8, 3: 12 };
