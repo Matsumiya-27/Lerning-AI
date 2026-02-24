@@ -129,10 +129,22 @@
 
       /* ===== デッキ編集画面 ===== */
       #screen-edit.active {
-        height: 100vh;
+        min-height: 100vh;
+        padding: 12px;
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
+      }
+      .db-container {
+        width: min(960px, calc(100vw - 24px));
+        aspect-ratio: 4 / 3;
         display: flex;
         flex-direction: column;
         overflow: hidden;
+        border: 1px solid #3c4863;
+        border-radius: 10px;
+        background: #1d2f4f;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
       }
       .db-main {
         flex: 1;
@@ -173,7 +185,7 @@
         align-content: flex-start;
       }
       .db-bar {
-        height: 12.5vh;
+        height: 12.5%;
         border-top: 1px solid #3c4863;
         display: flex;
         align-items: center;
@@ -325,6 +337,7 @@
 
     <!-- ===== デッキ編集画面 ===== -->
     <div id="screen-edit" class="screen">
+      <div class="db-container">
       <div class="db-main">
         <!-- 左1/3：現在のデッキ -->
         <div class="db-deck-panel">
@@ -343,6 +356,7 @@
         <button type="button" id="db-reset-btn">サンプルに戻す</button>
         <span class="db-count-info" id="db-count-label">0 / 30 枚</span>
         <span class="db-hint">左パネルのカードをクリックで取り除く　／　1種につき最大3枚</span>
+      </div>
       </div>
     </div>
 
