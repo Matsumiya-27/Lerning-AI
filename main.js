@@ -34,7 +34,9 @@ handEditButton.addEventListener('click', () => {
   replaceLeftmostHandCard('player', rank, effect, al, ar);
 });
 
+// 対戦画面に遷移したタイミングでゲームをリセット開始
+document.addEventListener('navigate-to-game', resetGame);
+
 // ===== 起動 =====
 
-resetGame();
 requestAnimationFrame(loop);
