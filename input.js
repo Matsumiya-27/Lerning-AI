@@ -8,7 +8,7 @@ import {
 } from './state.js';
 import {
   cancelSummonSelection, canConfirmSummonSelection, confirmSummonSelection,
-  toggleSummonSelectionCard, canUseEndTurnButton, isPlayerMainTurn,
+  toggleSummonSelectionCard, canUseEndTurnButton, isManualTurn,
   showSummonCostErrorFeedback, performSummon, beginSummonSelection,
   resolveSwipeAttack, resolveDirectAttack,
   getSummonTributeOptions, chooseBestTributeOptionForTarget,
@@ -114,9 +114,10 @@ export function onPointerDown(event) {
       return;
     }
 
+    const activeOwner = gameState.turn.currentPlayer;
     const selectable = getTopCardAtPoint(
       point,
-      (card) => card.zone === 'field' && card.owner === 'player' && !card.ui.pendingRemoval,
+      (card) => card.zone === 'field' && card.owner === activeOwner && !card.ui.pendingRemoval,
     );
     if (selectable) {
       toggleSummonSelectionCard(selectable.id);
@@ -134,11 +135,13 @@ export function onPointerDown(event) {
     return;
   }
 
-  if (!isPlayerMainTurn()) {
+  if (!isManualTurn()) {
     return;
   }
 
-  const handCard = getTopCardAtPoint(point, (card) => card.zone === 'hand' && card.owner === 'player' && !card.ui.animation);
+  const activeOwner = gameState.turn.currentPlayer;
+
+  const handCard = getTopCardAtPoint(point, (card) => card.zone === 'hand' && card.owner === activeOwner && !card.ui.animation);
   if (handCard) {
     handCard.ui.isDragging = true;
     gameState.activePointer = {
@@ -156,7 +159,7 @@ export function onPointerDown(event) {
 
   const fieldCard = getTopCardAtPoint(
     point,
-    (card) => card.zone === 'field' && card.owner === 'player' && !card.ui.pendingRemoval,
+    (card) => card.zone === 'field' && card.owner === activeOwner && !card.ui.pendingRemoval,
   );
 
   if (!fieldCard) {
@@ -212,15 +215,18 @@ export function onPointerUp(event) {
     card.ui.isDragging = false;
 
     const targetSlot = slotCenters.find((slot) => pointInSlot(card.x, card.y, slot));
+    // 操作中のオーナー（PvPモードでは敵ターンに敵カードを操作する）
+    const owner    = card.owner;
+    const opponent = owner === 'player' ? 'enemy' : 'player';
 
     gameState.interactionLock = true;
 
     if (targetSlot) {
       const occupant = targetSlot.occupiedByCardId !== null ? getCardById(targetSlot.occupiedByCardId) : null;
-      const isOpponentR1 = occupant && occupant.owner === 'enemy' && occupant.rank === 1;
+      const isOpponentR1 = occupant && occupant.owner === opponent && occupant.rank === 1;
 
       // 上書き召喚: 自場が空 + ドロップ先が相手RANK1 + 自カードがRANK1/2
-      if (isOverrideSummonAvailable('player') && isOpponentR1 && (card.rank === 1 || card.rank === 2)) {
+      if (isOverrideSummonAvailable(owner) && isOpponentR1 && (card.rank === 1 || card.rank === 2)) {
         performOverrideSummon(card, targetSlot);
       } else if (targetSlot.occupiedByCardId !== null && card.rank === 1) {
         // RANK1は占有スロットに出せない（上書き条件を満たさない場合）
@@ -233,8 +239,8 @@ export function onPointerUp(event) {
         // performSummon 経由で召喚酔い・rush・その他効果を正しく処理する
         performSummon(card, targetSlot, []);
       } else {
-        const tributeOptions = getSummonTributeOptions('player', card.rank);
-        const selected = chooseBestTributeOptionForTarget('player', tributeOptions, targetSlot.id);
+        const tributeOptions = getSummonTributeOptions(owner, card.rank);
+        const selected = chooseBestTributeOptionForTarget(owner, tributeOptions, targetSlot.id);
 
         if (!selected) {
           showSummonCostErrorFeedback(card);
@@ -244,20 +250,20 @@ export function onPointerUp(event) {
           });
         } else if (card.rank === 2) {
           // Rank2は生贄1体のみ。選択が明確なら暗転確認オーバーレイをスキップ
-          const playerFieldCards = getFieldCards('player');
-          if (occupant && occupant.owner === 'player') {
+          const ownerFieldCards = getFieldCards(owner);
+          if (occupant && occupant.owner === owner) {
             // ドロップ先が自軍カード → 即座に召喚
             performSummon(card, targetSlot, [occupant.id]);
-          } else if (playerFieldCards.length === 1) {
+          } else if (ownerFieldCards.length === 1) {
             // 場のカードが1枚のみ → 選択の余地なし、即座に召喚
-            performSummon(card, targetSlot, [playerFieldCards[0].id]);
+            performSummon(card, targetSlot, [ownerFieldCards[0].id]);
           } else {
             // 場のカードが複数 → 選択オーバーレイ表示
             beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);
           }
         } else if (card.rank === 3) {
           // Rank3: ドロップ先に自軍Rank2がいれば即座に1体生贄で召喚
-          if (occupant && occupant.owner === 'player' && occupant.rank === 2) {
+          if (occupant && occupant.owner === owner && occupant.rank === 2) {
             performSummon(card, targetSlot, [occupant.id]);
           } else {
             beginSummonSelection(card, targetSlot.id, pointerState.originalX, pointerState.originalY);

@@ -1,5 +1,5 @@
 // ===== エントリーポイント =====
-import { canvas, resetButton, updateAnimations } from './state.js';
+import { canvas, resetButton, gameState, updateAnimations } from './state.js';
 import { resetGame, updateTurnFlow } from './turn.js';
 import { draw } from './render.js';
 import { onPointerDown, onPointerMove, onPointerUp } from './input.js';
@@ -34,6 +34,15 @@ handEditButton.addEventListener('click', () => {
   const al = parseInt(parts[2], 10);
   const ar = parseInt(parts[3], 10);
   replaceLeftmostHandCard('player', rank, effect, al, ar);
+});
+
+// PvPデバッグモードの切り替え
+const pvpDebugButton = document.getElementById('pvpDebugButton');
+pvpDebugButton.addEventListener('click', () => {
+  gameState.debugPvP = !gameState.debugPvP;
+  pvpDebugButton.textContent = gameState.debugPvP ? 'PvP Mode: ON' : 'PvP Mode: OFF';
+  pvpDebugButton.style.background = gameState.debugPvP ? '#1a3020' : '';
+  pvpDebugButton.style.color      = gameState.debugPvP ? '#6de38c' : '';
 });
 
 // 対戦画面に遷移したタイミングでゲームをリセット開始

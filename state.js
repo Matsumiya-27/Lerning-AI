@@ -39,6 +39,8 @@ export const gameState = {
   cards: [],
   nextCardId: 0,
   interactionLock: false,
+  // デバッグ用: true にすると両プレイヤーを手動操作できる（AIが動かなくなる）
+  debugPvP: false,
   // プレイヤーのデッキ山（ゲーム開始時にデッキをシャッフルして積む。末尾から引く）
   playerDeckPile: [],
   activePointer: null,
