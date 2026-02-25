@@ -520,8 +520,14 @@ export function isPlayerMainTurn() {
   return gameState.turn.phase === 'main' && gameState.turn.currentPlayer === 'player';
 }
 
+// PvPデバッグモード時は敵ターンも手動操作可能
+export function isManualTurn() {
+  return gameState.turn.phase === 'main' &&
+    (gameState.turn.currentPlayer === 'player' || gameState.debugPvP);
+}
+
 export function canUseEndTurnButton() {
-  return isPlayerMainTurn() && !gameState.interactionLock && !gameState.result.winner;
+  return isManualTurn() && !gameState.interactionLock && !gameState.result.winner;
 }
 
 // ===== 戦闘解決 =====

@@ -52,7 +52,8 @@ export function beginMainPhase(owner) {
     showBanner(`PLAYER TURN ${gameState.turn.number}`);
   } else {
     gameState.turn.enemyAutoEndAtMs = 0;
-    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+    // PvPモード時はAIアクションをスケジュールしない
+    gameState.turn.enemyNextActionAtMs = gameState.debugPvP ? 0 : nowMs + ENEMY_ACTION_DELAY_MS;
     showBanner(`ENEMY TURN ${gameState.turn.number}`);
   }
 }
@@ -100,11 +101,12 @@ export function confirmDiscardPrompt(shouldDiscard) {
   if (!gameState.discardPrompt.active) {
     return;
   }
+  const who = gameState.discardPrompt.owner; // 'player' or 'enemy' in PvP mode
   gameState.discardPrompt.active = false;
   gameState.discardPrompt.owner = null;
 
   if (shouldDiscard) {
-    applyDiscardAll('player');
+    applyDiscardAll(who);
     // 破棄アニメ完了後にターン遷移
     const matchIdAtSchedule = gameState.matchId;
     setTimeout(() => {
@@ -124,7 +126,8 @@ export function endCurrentTurn(reason = 'manual') {
   }
 
   // プレイヤー手動終了、敵自動終了、行動不能自動終了のいずれか
-  if (reason === 'manual' && !isPlayerMainTurn()) {
+  // PvPモード時は敵ターンも手動終了を許可
+  if (reason === 'manual' && !isPlayerMainTurn() && !gameState.debugPvP) {
     return;
   }
 
@@ -132,10 +135,10 @@ export function endCurrentTurn(reason = 'manual') {
 
   // 手札3枚以上の場合は全破棄の選択を行う
   if (getHandCards(current).length >= 3) {
-    if (current === 'player') {
-      // プレイヤー: ダイアログを表示して待機（confirmDiscardPromptで再開）
+    if (current === 'player' || gameState.debugPvP) {
+      // プレイヤー（またはPvPモードの敵ターン）: ダイアログを表示して待機
       gameState.discardPrompt.active = true;
-      gameState.discardPrompt.owner = 'player';
+      gameState.discardPrompt.owner = current;
       return;
     } else {
       // 敵AI: ヒューリスティクスで判断
@@ -246,7 +249,8 @@ export function updateTurnFlow(nowMs) {
   }
 
   if (gameState.turn.phase === 'main') {
-    if (gameState.turn.currentPlayer === 'enemy' && !gameState.interactionLock) {
+    // PvPモード時はAIを動かさない
+    if (gameState.turn.currentPlayer === 'enemy' && !gameState.interactionLock && !gameState.debugPvP) {
       if (nowMs >= gameState.turn.enemyNextActionAtMs) {
         const acted = executeEnemyMainAction(nowMs);
         if (!acted) {
@@ -261,11 +265,13 @@ export function updateTurnFlow(nowMs) {
       }
     }
 
+    // 行動不能時の自動終了: PvPモードでは双方のターンで判定
+    const isManualCurrentTurn = gameState.turn.currentPlayer === 'player' || gameState.debugPvP;
     if (
-      gameState.turn.currentPlayer === 'player'
+      isManualCurrentTurn
       && !gameState.interactionLock
       && nowMs - gameState.turn.mainPhaseStartedAtMs >= NO_ACTION_AUTO_END_DELAY_MS
-      && !canOwnerAct('player')
+      && !canOwnerAct(gameState.turn.currentPlayer)
     ) {
       endCurrentTurn('no_actions');
     }
