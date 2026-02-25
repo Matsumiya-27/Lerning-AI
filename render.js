@@ -328,13 +328,40 @@ function drawCards(nowMs) {
     // weakaura デバフ中は攻撃値をオレンジで表示
     const leftDebuffed  = card.combat.baseAttackLeft  !== undefined && card.combat.attackLeft  < card.combat.baseAttackLeft;
     const rightDebuffed = card.combat.baseAttackRight !== undefined && card.combat.attackRight < card.combat.baseAttackRight;
-    ctx.fillStyle = leftDebuffed ? '#e07020' : '#174f9b';
-    ctx.fillText(String(card.combat.attackLeft), left + 10, centerY + 7);
 
-    ctx.fillStyle = rightDebuffed ? '#e07020' : '#9b1f1f';
-    const rightText = String(card.combat.attackRight);
-    const rightWidth = ctx.measureText(rightText).width;
-    ctx.fillText(rightText, left + width - 12 - rightWidth, centerY + 7);
+    // エッジ系効果: フィールドのスロット1（左端隣）またはスロット3（右端隣）にいる場合、
+    // 端への攻撃値を能力適用後の値（+1/+2/∞）で表示する
+    let displayLeft  = card.combat.attackLeft;
+    let displayRight = card.combat.attackRight;
+    let leftEdgeBoosted  = false;
+    let rightEdgeBoosted = false;
+    if (card.zone === 'field' && (card.effect === 'edge1' || card.effect === 'edge2' || card.effect === 'edgewin')) {
+      const slot = card.fieldSlotIndex;
+      if (slot === 1) {
+        // 左攻撃がスロット0（左端）へ向かう → 左値をブースト表示
+        leftEdgeBoosted = true;
+        if (card.effect === 'edgewin') displayLeft = Infinity;
+        else if (card.effect === 'edge2') displayLeft = card.combat.attackLeft + 2;
+        else displayLeft = card.combat.attackLeft + 1;
+      }
+      if (slot === 3) {
+        // 右攻撃がスロット4（右端）へ向かう → 右値をブースト表示
+        rightEdgeBoosted = true;
+        if (card.effect === 'edgewin') displayRight = Infinity;
+        else if (card.effect === 'edge2') displayRight = card.combat.attackRight + 2;
+        else displayRight = card.combat.attackRight + 1;
+      }
+    }
+
+    const leftStr  = displayLeft  === Infinity ? '∞' : String(displayLeft);
+    const rightStr = displayRight === Infinity ? '∞' : String(displayRight);
+
+    ctx.fillStyle = leftEdgeBoosted ? '#00d4ff' : leftDebuffed ? '#e07020' : '#174f9b';
+    ctx.fillText(leftStr, left + 10, centerY + 7);
+
+    ctx.fillStyle = rightEdgeBoosted ? '#00d4ff' : rightDebuffed ? '#e07020' : '#9b1f1f';
+    const rightTextWidth = ctx.measureText(rightStr).width;
+    ctx.fillText(rightStr, left + width - 12 - rightTextWidth, centerY + 7);
 
     // 効果テキスト（日本語）: 攻撃値とステータス表示の間に中央配置
     if (card.effect) {
@@ -353,9 +380,9 @@ function drawCards(nowMs) {
         revenge:      '撃破時に反撃',
         strike2:      '2回連続攻撃',
         strike3:      '3回連続攻撃',
-        edge1:        '端で攻撃+1',
-        edge2:        '端で攻撃+2',
-        edgewin:      '端で必ず勝つ',
+        edge1:        '端への攻撃+1',
+        edge2:        '端への攻撃+2',
+        edgewin:      '端への攻撃必勝',
         swap:         '隣を入れ替え',
         doublecenter: '両隣を同時攻撃',
         doubleblade:  '諸刃の剣',

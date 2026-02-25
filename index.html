@@ -23,11 +23,23 @@
       /* ===== タイトル画面 ===== */
       #screen-title.active {
         min-height: 100vh;
+        padding: 12px;
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
+      }
+      .title-container {
+        width: min(960px, calc(100vw - 24px));
+        aspect-ratio: 4 / 3;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 40px;
+        border: 1px solid #3c4863;
+        border-radius: 10px;
+        background: #1d2f4f;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
       }
       .title-heading {
         margin: 0;
@@ -192,17 +204,17 @@
       .db-grid::-webkit-scrollbar {
         display: none;
       }
-      /* デッキパネル: 4列 */
+      /* デッキパネル: 3列 */
       #db-deck-grid {
-        grid-template-columns: repeat(4, 1fr);
-        grid-auto-rows: 94px;
-        gap: 5px;
-      }
-      /* コレクションパネル: 3列 */
-      #db-collection-grid {
         grid-template-columns: repeat(3, 1fr);
-        grid-auto-rows: 130px;
-        gap: 8px;
+        grid-auto-rows: 128px;
+        gap: 6px;
+      }
+      /* コレクションパネル: 4列 */
+      #db-collection-grid {
+        grid-template-columns: repeat(4, 1fr);
+        grid-auto-rows: 110px;
+        gap: 6px;
       }
       .db-bar {
         height: 12.5%;
@@ -236,15 +248,6 @@
         user-select: none;
         transition: filter 0.12s;
         overflow: hidden;
-      }
-      /* デッキパネル内カード: コンパクト表示 */
-      #db-deck-grid .db-card-rank   { font-size: 7px; }
-      #db-deck-grid .db-card-effect { font-size: 8px; line-height: 1.2; }
-      #db-deck-grid .db-card-stats  { font-size: 8px; }
-      #db-deck-grid .db-card-total  { display: none; }
-      #db-deck-grid .db-card-badge  {
-        width: 17px; height: 17px; font-size: 10px;
-        bottom: 3px; right: 3px;
       }
       /* ランク枚数表示 */
       .db-rank-counts {
@@ -339,10 +342,12 @@
 
     <!-- ===== タイトル画面 ===== -->
     <div id="screen-title" class="screen active">
-      <h1 class="title-heading">カードゲーム</h1>
-      <div class="title-buttons">
-        <button class="title-btn" type="button" onclick="showScreen('game')">対戦</button>
-        <button class="title-btn" type="button" onclick="showScreen('edit')">編集</button>
+      <div class="title-container">
+        <h1 class="title-heading">カードゲーム</h1>
+        <div class="title-buttons">
+          <button class="title-btn" type="button" onclick="showScreen('game')">対戦</button>
+          <button class="title-btn" type="button" onclick="showScreen('edit')">編集</button>
+        </div>
       </div>
     </div>
 
@@ -413,7 +418,7 @@
       <!-- 下1/8：ユーティリティ -->
       <div class="db-bar">
         <button type="button" onclick="showScreen('title')">← タイトル</button>
-        <button type="button" id="db-reset-btn">サンプルに戻す</button>
+        <button type="button" id="db-reset-btn">ランダム構築</button>
         <span class="db-count-info" id="db-count-label">0 / 30 枚</span>
         <span class="db-hint">左パネルのカードをクリックで取り除く　／　1種につき最大3枚</span>
       </div>
