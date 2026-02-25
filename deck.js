@@ -97,6 +97,38 @@ export function removeCardFromDeck(rank, effect) {
   return false;
 }
 
+// ── 固定スタッツ定義 ──
+// 同じ種類のカードは常に同じ左右攻撃力を持つ（ランダムなし）
+export const FIXED_CARD_STATS = {
+  null:         { 1: { l: 3, r: 3 }, 2: { l: 4, r: 4 }, 3: { l: 6, r: 6 } },
+  rush:         { 1: { l: 2, r: 2 } },
+  edge1:        { 1: { l: 3, r: 2 } },
+  doubleblade:  { 1: { l: 2, r: 3 }, 2: { l: 3, r: 4 } },
+  weakaura:     { 1: { l: 2, r: 2 } },
+  offering:     { 1: { l: 3, r: 3 } },
+  pierce:       { 2: { l: 3, r: 4 } },
+  strike2:      { 2: { l: 3, r: 3 } },
+  edge2:        { 2: { l: 4, r: 3 } },
+  swap:         { 2: { l: 4, r: 3 } },
+  deathcurse:   { 2: { l: 4, r: 3 } },
+  revenge:      { 3: { l: 4, r: 6 } },
+  strike3:      { 3: { l: 6, r: 4 } },
+  edgewin:      { 3: { l: 6, r: 5 } },
+  doublecenter: { 3: { l: 6, r: 5 } },
+  steal:        { 3: { l: 4, r: 6 } },
+  harakiri:     { 3: { l: 7, r: 7 } },
+};
+
+// rank と effect を受け取り { l, r } を返す
+export function getCardStats(rank, effect) {
+  const key = effect ?? 'null';
+  const byRank = FIXED_CARD_STATS[key];
+  if (!byRank) return { l: 3, r: 3 };
+  const stats = byRank[rank];
+  if (!stats) return { l: 3, r: 3 };
+  return stats;
+}
+
 // デッキをシャッフルしたコピーを返す（deckState 自体は変更しない）
 export function shuffleDeck() {
   const arr = [...deckState.cards];

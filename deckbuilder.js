@@ -3,8 +3,8 @@ import {
   CARD_TYPES, DECK_SIZE, MAX_COPIES,
   deckState, buildSampleDeck,
   getCardTypeCount, addCardToDeck, removeCardFromDeck,
+  getCardStats,
 } from './deck.js';
-import { EFFECT_RANK_TOTAL, PLAIN_RANK_TOTAL } from './constants.js';
 
 // ── 表示用定数（render.js と統一） ──
 const EFFECT_JP = {
@@ -48,33 +48,15 @@ const EFFECT_COLOR = {
 const RANK_BG     = { 1: '#1a2e4a', 2: '#1a3a38', 3: '#2e1a50' };
 const RANK_BORDER = { 1: '#2a5090', 2: '#1a6060', 3: '#5020a0' };
 
-// ── スタッツ表示文字列 ──
-const REDUCED_EFFECTS = new Set(['rush', 'weakaura', 'pierce', 'strike2', 'revenge', 'strike3', 'steal']);
-const SYMMETRIC_EFFECTS = new Set(['rush', 'weakaura', 'offering', 'strike2', 'harakiri']);
-
+// ── 固定スタッツ表示文字列 ──
 function getDisplayStats(rank, effect) {
-  if (effect === 'harakiri') return '7 / 7';
-  if (effect === null || effect === 'offering') {
-    const h = PLAIN_RANK_TOTAL[rank] / 2;
-    return `${h} / ${h}`;
-  }
-  if (SYMMETRIC_EFFECTS.has(effect)) {
-    const h = EFFECT_RANK_TOTAL[rank] / 2;
-    return `${h} / ${h}`;
-  }
-  // ランダム範囲
-  if (rank === 1) return '2〜3 / 3〜2';
-  if (rank === 2) return '3〜4 / 4〜3';
-  if (REDUCED_EFFECTS.has(effect)) return '4〜6 / 6〜4';
-  return '5〜6 / 6〜5';
+  const s = getCardStats(rank, effect);
+  return `${s.l} / ${s.r}`;
 }
 
 function getTotalLabel(rank, effect) {
-  if (effect === 'harakiri') return '14';
-  if (effect === null || effect === 'offering') return String(PLAIN_RANK_TOTAL[rank]);
-  if (REDUCED_EFFECTS.has(effect)) return String(EFFECT_RANK_TOTAL[rank]);
-  const base = [0, 5, 7, 11][rank];
-  return String(base);
+  const s = getCardStats(rank, effect);
+  return String(s.l + s.r);
 }
 
 // ── カード要素の生成 ──
@@ -118,6 +100,9 @@ function createCardEl(rank, effect, onClick) {
   return div;
 }
 
+// ── ソート状態 ──
+let sortOrder = 'asc'; // 'asc' | 'desc'
+
 // ── パネル描画 ──
 function renderDeckPanel() {
   const grid   = document.getElementById('db-deck-grid');
@@ -126,7 +111,10 @@ function renderDeckPanel() {
   grid.innerHTML = '';
 
   const count = deckState.cards.length;
-  header.textContent = `デッキ（${count} / ${DECK_SIZE}）`;
+  const r1 = deckState.cards.filter((c) => c.rank === 1).length;
+  const r2 = deckState.cards.filter((c) => c.rank === 2).length;
+  const r3 = deckState.cards.filter((c) => c.rank === 3).length;
+  header.innerHTML = `デッキ（${count} / ${DECK_SIZE}）<br><span class="db-rank-counts">R1: ${r1}枚　R2: ${r2}枚　R3: ${r3}枚</span>`;
   header.style.color  = count === DECK_SIZE ? '#6de38c' : '#ffd24a';
 
   // ランク → effect の文字列順でソート
@@ -150,7 +138,14 @@ function renderCollectionPanel() {
   if (!grid) return;
   grid.innerHTML = '';
 
-  CARD_TYPES.forEach(({ rank, effect }) => {
+  // ソート順に応じてカードタイプ一覧を並び替え
+  const types = [...CARD_TYPES].sort((a, b) => {
+    const rankDiff = sortOrder === 'asc' ? a.rank - b.rank : b.rank - a.rank;
+    if (rankDiff !== 0) return rankDiff;
+    return (a.effect ?? '') < (b.effect ?? '') ? -1 : 1;
+  });
+
+  types.forEach(({ rank, effect }) => {
     const copiesInDeck = getCardTypeCount(rank, effect);
     const deckFull     = deckState.cards.length >= DECK_SIZE;
     const maxReached   = copiesInDeck >= MAX_COPIES;
@@ -186,10 +181,20 @@ function renderCountBar() {
   label.style.color = n === DECK_SIZE ? '#6de38c' : '#ffd24a';
 }
 
+// ソートボタンのハイライトを更新
+function updateSortButtons() {
+  const ascBtn  = document.getElementById('db-sort-asc');
+  const descBtn = document.getElementById('db-sort-desc');
+  if (!ascBtn || !descBtn) return;
+  ascBtn.style.background  = sortOrder === 'asc'  ? '#2a4060' : '#192436';
+  descBtn.style.background = sortOrder === 'desc' ? '#2a4060' : '#192436';
+}
+
 function refresh() {
   renderDeckPanel();
   renderCollectionPanel();
   renderCountBar();
+  updateSortButtons();
 }
 
 // ── 外部 API ──
@@ -203,6 +208,24 @@ export function openDeckBuilder() {
     resetBtn.dataset.bound = '1';
     resetBtn.addEventListener('click', () => {
       deckState.cards = buildSampleDeck();
+      refresh();
+    });
+  }
+
+  // ソートボタン
+  const sortAscBtn  = document.getElementById('db-sort-asc');
+  const sortDescBtn = document.getElementById('db-sort-desc');
+  if (sortAscBtn && !sortAscBtn.dataset.bound) {
+    sortAscBtn.dataset.bound = '1';
+    sortAscBtn.addEventListener('click', () => {
+      sortOrder = 'asc';
+      refresh();
+    });
+  }
+  if (sortDescBtn && !sortDescBtn.dataset.bound) {
+    sortDescBtn.dataset.bound = '1';
+    sortDescBtn.addEventListener('click', () => {
+      sortOrder = 'desc';
       refresh();
     });
   }

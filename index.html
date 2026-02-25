@@ -174,15 +174,35 @@
         font-size: 14px;
         flex-shrink: 0;
         color: #ffd24a;
+        line-height: 1.5;
       }
       .db-grid {
         flex: 1;
         overflow-y: auto;
         padding: 10px;
-        display: flex;
-        flex-wrap: wrap;
+        display: grid;
         gap: 8px;
-        align-content: flex-start;
+        align-content: start;
+        /* スクロールバー非表示 */
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        /* スワイプスクロール対応 */
+        touch-action: pan-y;
+      }
+      .db-grid::-webkit-scrollbar {
+        display: none;
+      }
+      /* デッキパネル: 4列 */
+      #db-deck-grid {
+        grid-template-columns: repeat(4, 1fr);
+        grid-auto-rows: 94px;
+        gap: 5px;
+      }
+      /* コレクションパネル: 3列 */
+      #db-collection-grid {
+        grid-template-columns: repeat(3, 1fr);
+        grid-auto-rows: 130px;
+        gap: 8px;
       }
       .db-bar {
         height: 12.5%;
@@ -206,17 +226,51 @@
       }
       /* ── カード要素 ── */
       .db-card {
-        width: 96px;
-        height: 138px;
         border-radius: 8px;
         cursor: pointer;
         display: flex;
         flex-direction: column;
-        padding: 7px 6px 6px;
+        padding: 6px 5px 5px;
         box-sizing: border-box;
         position: relative;
         user-select: none;
         transition: filter 0.12s;
+        overflow: hidden;
+      }
+      /* デッキパネル内カード: コンパクト表示 */
+      #db-deck-grid .db-card-rank   { font-size: 7px; }
+      #db-deck-grid .db-card-effect { font-size: 8px; line-height: 1.2; }
+      #db-deck-grid .db-card-stats  { font-size: 8px; }
+      #db-deck-grid .db-card-total  { display: none; }
+      #db-deck-grid .db-card-badge  {
+        width: 17px; height: 17px; font-size: 10px;
+        bottom: 3px; right: 3px;
+      }
+      /* ランク枚数表示 */
+      .db-rank-counts {
+        font-size: 10px;
+        font-weight: normal;
+        color: #8aafdd;
+      }
+      /* コレクションパネルヘッダー */
+      .db-collection-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 14px;
+        border-bottom: 1px solid #3c4863;
+        flex-shrink: 0;
+        gap: 8px;
+      }
+      .db-sort-btns {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+      .db-sort-btns button {
+        padding: 3px 8px;
+        font-size: 11px;
+        border-radius: 6px;
       }
       .db-card:hover {
         filter: brightness(1.22);
@@ -346,7 +400,13 @@
         </div>
         <!-- 右2/3：カード一覧 -->
         <div class="db-collection-panel">
-          <div class="db-panel-head" style="color:#8aafdd;">カード一覧　クリックして追加</div>
+          <div class="db-collection-head">
+            <span style="color:#8aafdd; font-weight:bold; font-size:14px;">カード一覧　クリックして追加</span>
+            <div class="db-sort-btns">
+              <button type="button" id="db-sort-asc">Rank↑</button>
+              <button type="button" id="db-sort-desc">Rank↓</button>
+            </div>
+          </div>
           <div class="db-grid" id="db-collection-grid"></div>
         </div>
       </div>
