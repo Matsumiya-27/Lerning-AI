@@ -3,13 +3,13 @@ import { STARTING_HP, ENEMY_ACTION_DELAY_MS } from './constants.js';
 import {
   gameState, slotCenters,
   getCardById, getCardAtSlot, getHandCards, getFieldCards,
-  startMoveAnimation, reflowHand,
 } from './state.js';
 import {
   getRankTotalPower, getSummonTributeOptions, chooseBestTributeOption,
-  getSummonCandidateSlots, canDirectAttack, applyTributeByIds,
+  getSummonCandidateSlots, canDirectAttack,
   resolveSwipeAttack, resolveDirectAttack,
   isOverrideSummonAvailable, getOverrideSummonSlots, performOverrideSummon,
+  performSummon,
 } from './cards.js';
 
 export function getEmptySlotIndices() {
@@ -186,18 +186,8 @@ export function executeEnemyMainAction(nowMs) {
       return false;
     }
     gameState.interactionLock = true;
-
-    applyTributeByIds(tributeIds);
-
-    startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
-      card.zone = 'field';
-      card.handIndex = null;
-      card.fieldSlotIndex = slotIndex;
-      card.combat.summonedThisTurn = true;
-      targetSlot.occupiedByCardId = card.id;
-      reflowHand('enemy');
-      gameState.interactionLock = false;
-    });
+    // performSummon が tribute 適用・アニメ・召喚時効果発動・lock 解除をすべて担当
+    performSummon(card, targetSlot, tributeIds);
 
     gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
     return true;
