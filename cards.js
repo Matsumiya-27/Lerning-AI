@@ -353,11 +353,6 @@ export function performSummon(card, targetSlot, tributeIds) {
       gameState.interactionLock = false;
       return;
     }
-    // doublecenter効果
-    if (card.effect === 'doublecenter' && card.fieldSlotIndex === 2) {
-      performDoubleCenterAttack(card, matchIdAtStart);
-      return;
-    }
     // offering効果: プレイヤー召喚時のみ選択UI
     if (card.effect === 'offering' && card.owner === 'player') {
       performOfferingEffect(card);
@@ -477,10 +472,6 @@ export function performOverrideSummon(card, targetSlot) {
         gameState.interactionLock = false;
         return;
       }
-      if (card.effect === 'doublecenter' && card.fieldSlotIndex === 2) {
-        performDoubleCenterAttack(card, matchIdAtStart);
-        return;
-      }
       if (card.effect === 'offering' && card.owner === 'player') {
         performOfferingEffect(card);
         return;
@@ -551,6 +542,18 @@ export function resolveSwipeAttack(attacker, direction) {
     if (attacker.owner === 'player') {
       triggerUsedCardFeedback(attacker, nowMs);
     }
+    return;
+  }
+
+  // doublecenter 中央攻撃: スワイプ方向によらず両隣を同時攻撃
+  if (attacker.effect === 'doublecenter' && attacker.fieldSlotIndex === 2) {
+    const le = getCardAtSlot(1);
+    const re = getCardAtSlot(3);
+    const hasTarget = (le && le.owner !== attacker.owner) || (re && re.owner !== attacker.owner);
+    if (!hasTarget) return;
+    gameState.interactionLock = true;
+    attacker.combat.hasActedThisTurn = true;
+    performDoubleCenterAttack(attacker, matchIdAtStart);
     return;
   }
 

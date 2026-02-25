@@ -13,9 +13,9 @@ const EFFECT_JP = {
   revenge:      '撃破時に反撃',
   strike2:      '2回連続攻撃',
   strike3:      '3回連続攻撃',
-  edge1:        '端で攻撃+1',
-  edge2:        '端で攻撃+2',
-  edgewin:      '端で必ず勝つ',
+  edge1:        '端への攻撃+1',
+  edge2:        '端への攻撃+2',
+  edgewin:      '端への攻撃必勝',
   swap:         '隣を入れ替え',
   doublecenter: '両隣を同時攻撃',
   doubleblade:  '諸刃の剣',
@@ -60,7 +60,8 @@ function getTotalLabel(rank, effect) {
 }
 
 // ── カード要素の生成 ──
-function createCardEl(rank, effect, onClick) {
+// onAdd: 左クリック・左スワイプ時、onRemove: 右クリック・右スワイプ時
+function createCardEl(rank, effect, onAdd, onRemove) {
   const div = document.createElement('div');
   div.className = 'db-card';
   div.style.background = RANK_BG[rank];
@@ -92,10 +93,42 @@ function createCardEl(rank, effect, onClick) {
   totalDiv.textContent = `合計 ${getTotalLabel(rank, effect)}`;
   div.appendChild(totalDiv);
 
-  if (onClick) {
-    div.addEventListener('click', onClick);
-    div.addEventListener('pointerdown', (e) => e.stopPropagation());
-  }
+  // スワイプ検出用
+  let swipeStartX = null;
+  let swipeStartY = null;
+  let swipeHandled = false;
+
+  div.addEventListener('pointerdown', (e) => {
+    swipeStartX = e.clientX;
+    swipeStartY = e.clientY;
+    swipeHandled = false;
+    e.stopPropagation();
+  });
+
+  div.addEventListener('pointerup', (e) => {
+    if (swipeStartX === null) return;
+    const dx = e.clientX - swipeStartX;
+    const dy = e.clientY - swipeStartY;
+    // 水平方向30px以上、かつ水平成分が垂直成分より大きい場合はスワイプと判定
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
+      swipeHandled = true;
+      if (dx < 0 && onAdd) onAdd();        // 左スワイプ＝追加
+      else if (dx > 0 && onRemove) onRemove(); // 右スワイプ＝削除
+    }
+    swipeStartX = null;
+  });
+
+  // 左クリック＝追加
+  div.addEventListener('click', () => {
+    if (swipeHandled) { swipeHandled = false; return; }
+    if (onAdd) onAdd();
+  });
+
+  // 右クリック＝削除
+  div.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (onRemove) onRemove();
+  });
 
   return div;
 }
@@ -115,7 +148,7 @@ function renderDeckPanel() {
   const r2 = deckState.cards.filter((c) => c.rank === 2).length;
   const r3 = deckState.cards.filter((c) => c.rank === 3).length;
   header.innerHTML = `デッキ（${count} / ${DECK_SIZE}）<br><span class="db-rank-counts">R1: ${r1}枚　R2: ${r2}枚　R3: ${r3}枚</span>`;
-  header.style.color  = count === DECK_SIZE ? '#6de38c' : '#ffd24a';
+  header.style.color = count === DECK_SIZE ? '#6de38c' : '#ffd24a';
 
   // ランク → effect の文字列順でソート
   const sorted = [...deckState.cards].sort((a, b) => {
@@ -124,11 +157,18 @@ function renderDeckPanel() {
   });
 
   sorted.forEach(({ rank, effect }) => {
-    const el = createCardEl(rank, effect, () => {
+    const onAdd = () => {
+      if (getCardTypeCount(rank, effect) < MAX_COPIES && deckState.cards.length < DECK_SIZE) {
+        addCardToDeck(rank, effect);
+        refresh();
+      }
+    };
+    const onRemove = () => {
       removeCardFromDeck(rank, effect);
       refresh();
-    });
-    el.title = 'クリックで取り除く';
+    };
+    const el = createCardEl(rank, effect, onAdd, onRemove);
+    el.title = '左クリック/左スワイプ：追加　右クリック/右スワイプ：削除';
     grid.appendChild(el);
   });
 }
@@ -150,11 +190,12 @@ function renderCollectionPanel() {
     const deckFull     = deckState.cards.length >= DECK_SIZE;
     const maxReached   = copiesInDeck >= MAX_COPIES;
     const canAdd       = !deckFull && !maxReached;
+    const canRemove    = copiesInDeck > 0;
 
-    const el = createCardEl(rank, effect, canAdd ? () => {
-      addCardToDeck(rank, effect);
-      refresh();
-    } : null);
+    const onAdd    = canAdd    ? () => { addCardToDeck(rank, effect);    refresh(); } : null;
+    const onRemove = canRemove ? () => { removeCardFromDeck(rank, effect); refresh(); } : null;
+
+    const el = createCardEl(rank, effect, onAdd, onRemove);
 
     // コピー数バッジ（右下）
     const badge = document.createElement('div');
@@ -164,9 +205,12 @@ function renderCollectionPanel() {
     badge.style.borderColor = copiesInDeck >= MAX_COPIES ? '#e0a000' : '#3a5a90';
     el.appendChild(badge);
 
-    if (!canAdd) {
-      el.style.opacity = maxReached ? '0.38' : '0.65';
+    // 追加も削除もできない場合は薄く表示
+    if (!canAdd && !canRemove) {
+      el.style.opacity = '0.35';
       el.style.cursor  = 'default';
+    } else if (!canAdd) {
+      el.style.opacity = '0.65';
     }
 
     grid.appendChild(el);
@@ -202,7 +246,7 @@ function refresh() {
 export function openDeckBuilder() {
   refresh();
 
-  // サンプルデッキに戻すボタン
+  // ランダム構築ボタン
   const resetBtn = document.getElementById('db-reset-btn');
   if (resetBtn && !resetBtn.dataset.bound) {
     resetBtn.dataset.bound = '1';
