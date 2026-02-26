@@ -108,9 +108,11 @@ export function drawRandomCardToHand(owner) {
     rank = drawn.rank;
     effect = drawn.effect;
   } else {
-    // 敵: ランダム生成
-    rank = randomRank();
-    effect = randomEffectForRank(rank);
+    // 敵: デッキ山から引く。切れていれば何もしない
+    if (gameState.enemyDeckPile.length === 0) return;
+    const drawn = gameState.enemyDeckPile.pop();
+    rank = drawn.rank;
+    effect = drawn.effect;
   }
 
   // ── 固定スタッツ参照（同種カードは常に同じ左右値）──
@@ -337,9 +339,7 @@ export function performSummon(card, targetSlot, tributeIds) {
     card.zone = 'field';
     card.handIndex = null;
     card.fieldSlotIndex = targetSlot.id;
-    // rush: 召喚酔いなし（直接攻撃を同ターンに使用可能）
-    const hasRush = card.effect === 'rush';
-    card.combat.summonedThisTurn = !hasRush;
+    card.combat.summonedThisTurn = false; // 召喚ターンの直接攻撃制限なし
     targetSlot.occupiedByCardId = card.id;
     reflowHand(card.owner);
     gameState.summonSelection.active = false;
@@ -460,9 +460,7 @@ export function performOverrideSummon(card, targetSlot) {
       card.zone = 'field';
       card.handIndex = null;
       card.fieldSlotIndex = targetSlot.id;
-      // rush: 召喚酔いなし
-      const hasRush = card.effect === 'rush';
-      card.combat.summonedThisTurn = !hasRush;
+      card.combat.summonedThisTurn = false; // 召喚ターンの直接攻撃制限なし
       targetSlot.occupiedByCardId = card.id;
       reflowHand(card.owner);
       applyBoardEffects();
@@ -512,7 +510,7 @@ export function canDirectAttack(attackerOwner) {
 export function canOwnerAct(owner) {
   const canSummon = getHandCards(owner).some((card) => canSummonCard(owner, card));
   const canAttack = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && hasAdjacentEnemyTarget(card));
-  const canDirect = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn && !card.combat.summonedThisTurn) && canDirectAttack(owner);
+  const canDirect = getFieldCards(owner).some((card) => !card.combat.hasActedThisTurn) && canDirectAttack(owner);
   return canSummon || canAttack || canDirect;
 }
 
@@ -814,7 +812,7 @@ export function resolveDirectAttack(attacker) {
     return;
   }
 
-  if (attacker.combat.hasActedThisTurn || attacker.combat.summonedThisTurn || !canDirectAttack(attacker.owner)) {
+  if (attacker.combat.hasActedThisTurn || !canDirectAttack(attacker.owner)) {
     if (attacker.owner === 'player') {
       triggerUsedCardFeedback(attacker, performance.now());
     }
