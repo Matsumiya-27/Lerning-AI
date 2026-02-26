@@ -366,7 +366,7 @@ function drawCards(nowMs) {
     // 効果テキスト（日本語）: 攻撃値とステータス表示の間に中央配置
     if (card.effect) {
       const effectColor = {
-        rush: '#2ca44e', pierce: '#c8a000', revenge: '#9040d0',
+        rush: '#666666', pierce: '#c8a000', revenge: '#9040d0',
         strike2: '#e05020', strike3: '#ff2800',
         edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
         swap: '#c07800', doublecenter: '#b000b0',
@@ -375,7 +375,7 @@ function drawCards(nowMs) {
         deathcurse: '#702090', harakiri: '#cc0000',
       };
       const effectJp = {
-        rush:         '召喚即攻撃可',
+        rush:         '調整中',
         pierce:       '超過ダメージ',
         revenge:      '撃破時に反撃',
         strike2:      '2回連続攻撃',
@@ -716,6 +716,50 @@ function drawDiscardPrompt() {
   ctx.restore();
 }
 
+function drawDeckCounts() {
+  const playerCount = gameState.playerDeckPile.length;
+  const enemyCount = gameState.enemyDeckPile ? gameState.enemyDeckPile.length : 0;
+
+  const panelX = 794;
+  const panelY = 648;
+  const panelW = 152;
+  const panelH = 54;
+
+  // 背景パネル
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 18, 34, 0.72)';
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelW, panelH, 7);
+  ctx.fill();
+  ctx.strokeStyle = '#3a5580';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // ラベル
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = '#6a8ab0';
+  ctx.fillText('デッキ残枚数', panelX + 8, panelY + 14);
+
+  ctx.font = '13px sans-serif';
+  // 敵デッキ
+  ctx.fillStyle = enemyCount === 0 ? '#e05050' : '#c09090';
+  ctx.fillText(`相手:`, panelX + 8, panelY + 33);
+  ctx.fillStyle = enemyCount === 0 ? '#ff6060' : '#e0b0b0';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`${enemyCount}枚`, panelX + 46, panelY + 33);
+
+  ctx.font = '13px sans-serif';
+  // 自分デッキ
+  ctx.fillStyle = playerCount === 0 ? '#e05050' : '#8090c0';
+  ctx.fillText(`自分:`, panelX + 8, panelY + 50);
+  ctx.fillStyle = playerCount === 0 ? '#ff6060' : '#a0c0e8';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.fillText(`${playerCount}枚`, panelX + 46, panelY + 50);
+
+  ctx.restore();
+}
+
 export function draw(nowMs) {
   let shakeX = 0;
   let shakeY = 0;
@@ -735,6 +779,7 @@ export function draw(nowMs) {
   drawHpBadge('player', playerHpPos.x, playerHpPos.y);
   drawDamageTexts(nowMs);
   drawHudLabels();
+  drawDeckCounts();
   drawCanvasEndTurnButton();
   drawCoinToss(nowMs);
   drawTurnBanner(nowMs);

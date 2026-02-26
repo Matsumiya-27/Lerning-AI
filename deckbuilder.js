@@ -8,7 +8,7 @@ import {
 
 // ── 表示用定数（render.js と統一） ──
 const EFFECT_JP = {
-  rush:         '召喚即攻撃可',
+  rush:         '調整中',
   pierce:       '超過ダメージ',
   revenge:      '撃破時に反撃',
   strike2:      '2回連続攻撃',
@@ -27,7 +27,7 @@ const EFFECT_JP = {
 };
 
 const EFFECT_COLOR = {
-  rush:         '#2ca44e',
+  rush:         '#666666',
   pierce:       '#c8a000',
   revenge:      '#9040d0',
   strike2:      '#e05020',

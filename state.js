@@ -43,6 +43,8 @@ export const gameState = {
   debugPvP: false,
   // プレイヤーのデッキ山（ゲーム開始時にデッキをシャッフルして積む。末尾から引く）
   playerDeckPile: [],
+  // 敵のデッキ山（サンプルデッキをシャッフルして積む）
+  enemyDeckPile: [],
   activePointer: null,
   summonSelection: {
     active: false,

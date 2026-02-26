@@ -13,10 +13,10 @@ import {
 } from './state.js';
 import {
   drawRandomCardToHand, buildInitialCards,
-  isPlayerMainTurn, canOwnerAct,
+  isPlayerMainTurn, canOwnerAct, finishGame,
 } from './cards.js';
 import { executeEnemyMainAction, aiShouldDiscardHand } from './ai.js';
-import { shuffleDeck } from './deck.js';
+import { shuffleDeck, buildSampleDeck } from './deck.js';
 
 export function applyDrawPhase(owner) {
   const handCountAtStart = getHandCards(owner).length;
@@ -27,10 +27,19 @@ export function applyDrawPhase(owner) {
       : Math.min(handCountAtStart + 1, MAX_HAND))
     : Math.min(MIN_HAND_AFTER_DRAW, MAX_HAND);
 
+  // デッキ切れ判定: ドローが必要なのにデッキが空なら敗北
+  if (handCountAtStart < drawTarget) {
+    const deckPile = owner === 'player' ? gameState.playerDeckPile : gameState.enemyDeckPile;
+    if (deckPile.length === 0) {
+      finishGame(owner === 'player' ? 'enemy' : 'player');
+      return;
+    }
+  }
+
   while (getHandCards(owner).length < drawTarget) {
     const countBefore = getHandCards(owner).length;
     drawRandomCardToHand(owner);
-    if (getHandCards(owner).length === countBefore) break; // デッキ切れ
+    if (getHandCards(owner).length === countBefore) break; // デッキ切れ（安全弁）
   }
   reflowHand(owner);
 }
@@ -71,6 +80,7 @@ export function beginTurn(owner, isNewRound = false) {
   }
 
   applyDrawPhase(owner);
+  if (gameState.result.winner) return; // デッキアウト敗北
   beginMainPhase(owner);
 }
 
@@ -177,6 +187,13 @@ export function resetGame() {
   gameState.matchId += 1;
   // プレイヤーのデッキ山を再構築（シャッフルして積み直す）
   gameState.playerDeckPile = shuffleDeck();
+  // 敵のデッキ山はサンプルデッキをシャッフルして使用
+  const enemyDeck = buildSampleDeck();
+  for (let i = enemyDeck.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = enemyDeck[i]; enemyDeck[i] = enemyDeck[j]; enemyDeck[j] = tmp;
+  }
+  gameState.enemyDeckPile = enemyDeck;
   buildInitialCards();
   gameState.interactionLock = false;
   gameState.activePointer = null;
