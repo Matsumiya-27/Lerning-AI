@@ -28,7 +28,9 @@ export function applyDrawPhase(owner) {
     : Math.min(MIN_HAND_AFTER_DRAW, MAX_HAND);
 
   while (getHandCards(owner).length < drawTarget) {
+    const countBefore = getHandCards(owner).length;
     drawRandomCardToHand(owner);
+    if (getHandCards(owner).length === countBefore) break; // デッキ切れ
   }
   reflowHand(owner);
 }
