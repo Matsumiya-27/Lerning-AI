@@ -13,17 +13,21 @@ import {
   startMoveAnimation, markCardDestroyed, recomputeSlotOccupancy,
   triggerUsedCardFeedback, triggerScreenShake, addDamageText,
   triggerHpPulse, showBanner, getHpBadgePosition,
+  getGraveyardRankTotal,
 } from './state.js';
 
 // ===== カードファクトリ =====
 
-export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight, effect = null }) {
+export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight, effect = null, attribute = null, type = 'テスト', cardCategory = 'unit' }) {
   return {
     id,
     owner,
     zone,
     rank,
-    effect,  // 'rush' | 'pierce' | 'revenge' | null
+    effect,
+    attribute,    // 属性: null=無 / 'red'/'blue'/'green'/'black'/'white'
+    type,         // 種族: 'テスト' など
+    cardCategory, // 'unit' | 'spell'
     handIndex,
     fieldSlotIndex,
     x,
@@ -31,7 +35,7 @@ export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotI
     combat: {
       attackLeft,
       attackRight,
-      baseAttackLeft: attackLeft,   // 永続デバフで変化する基本値
+      baseAttackLeft: attackLeft,
       baseAttackRight: attackRight,
       hasActedThisTurn: false,
       summonedThisTurn: false,
@@ -100,23 +104,24 @@ export function drawRandomCardToHand(owner) {
 
   let rank;
   let effect;
+  let cardCategory = 'unit';
 
   if (owner === 'player') {
-    // プレイヤー: デッキ山から引く。切れていれば何もしない
     if (gameState.playerDeckPile.length === 0) return;
     const drawn = gameState.playerDeckPile.pop();
     rank = drawn.rank;
     effect = drawn.effect;
+    cardCategory = drawn.cardCategory ?? 'unit';
   } else {
-    // 敵: デッキ山から引く。切れていれば何もしない
     if (gameState.enemyDeckPile.length === 0) return;
     const drawn = gameState.enemyDeckPile.pop();
     rank = drawn.rank;
     effect = drawn.effect;
+    cardCategory = drawn.cardCategory ?? 'unit';
   }
 
-  // ── 固定スタッツ参照（同種カードは常に同じ左右値）──
-  const stats = getCardStats(rank, effect);
+  // スペルは攻撃値なし
+  const stats = cardCategory === 'spell' ? { l: 0, r: 0 } : getCardStats(rank, effect);
   const pair = { left: stats.l, right: stats.r };
 
   const card = createCard({
@@ -130,6 +135,9 @@ export function drawRandomCardToHand(owner) {
     attackLeft: pair.left,
     attackRight: pair.right,
     effect,
+    cardCategory,
+    attribute: null,
+    type: 'テスト',
   });
   gameState.nextCardId += 1;
   gameState.cards.push(card);
@@ -791,6 +799,32 @@ export function replaceLeftmostHandCard(owner, rank, effect, attackLeft, attackR
   target.combat.attackRight = attackRight;
   target.combat.baseAttackLeft = attackLeft;
   target.combat.baseAttackRight = attackRight;
+}
+
+// ===== スペル発動 =====
+
+export function canActivateSpell(card, owner) {
+  if (card.cardCategory !== 'spell') return false;
+  return getGraveyardRankTotal(owner) >= card.rank;
+}
+
+export function activateSpellEffect(card, owner) {
+  gameState.interactionLock = true;
+  const matchIdAtStart = gameState.matchId;
+  const nowMs = performance.now();
+
+  if (card.effect === 'draw1') {
+    drawRandomCardToHand(owner);
+    reflowHand(owner);
+  }
+
+  // 使用済みスペルを墓地へ送る（pendingRemoval がセットされ、markCardDestroyed 内で graveyard に追加される）
+  markCardDestroyed(card, nowMs);
+
+  setTimeout(() => {
+    if (gameState.matchId !== matchIdAtStart) return;
+    gameState.interactionLock = false;
+  }, DESTROY_ANIMATION_MS + 30);
 }
 
 export function finishGame(winner) {

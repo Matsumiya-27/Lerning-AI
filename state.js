@@ -45,6 +45,8 @@ export const gameState = {
   playerDeckPile: [],
   // 敵のデッキ山（サンプルデッキをシャッフルして積む）
   enemyDeckPile: [],
+  // 墓地: 場を離れたカード・捨て札の要約（rank + cardCategory のみ保持）
+  graveyard: { player: [], enemy: [] },
   activePointer: null,
   summonSelection: {
     active: false,
@@ -222,6 +224,12 @@ export function markCardDestroyed(card, nowMs) {
   card.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
   card.ui.pendingRemoval = true;
 
+  // 墓地に追加（スペルは0扱い、ユニットはrank分を積算対象に）
+  gameState.graveyard[card.owner].push({
+    rank: card.rank ?? 0,
+    cardCategory: card.cardCategory ?? 'unit',
+  });
+
   if (card.fieldSlotIndex !== null) {
     const slot = slotCenters[card.fieldSlotIndex];
     if (slot && slot.occupiedByCardId === card.id) {
@@ -234,6 +242,14 @@ export function markCardDestroyed(card, nowMs) {
   }
 
   card.fieldSlotIndex = null;
+}
+
+// 墓地のRank合計を返す（スペルは0扱い）
+export function getGraveyardRankTotal(owner) {
+  return (gameState.graveyard[owner] || []).reduce((sum, entry) => {
+    if (entry.cardCategory === 'spell') return sum;
+    return sum + (entry.rank || 0);
+  }, 0);
 }
 
 export function triggerUsedCardFeedback(card, nowMs) {

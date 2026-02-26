@@ -4,15 +4,16 @@ export const DECK_SIZE = 30;
 export const MAX_COPIES = 3;
 
 // 全20種のカードタイプ定義（rank + effect の組み合わせ）
+// cardCategory が未指定のものはすべてユニット
 export const CARD_TYPES = [
-  // ── RANK 1 ──
+  // ── RANK 1 (ユニット) ──
   { rank: 1, effect: null },
   { rank: 1, effect: 'rush' },
   { rank: 1, effect: 'edge1' },
   { rank: 1, effect: 'doubleblade' },
   { rank: 1, effect: 'weakaura' },
   { rank: 1, effect: 'offering' },
-  // ── RANK 2 ──
+  // ── RANK 2 (ユニット) ──
   { rank: 2, effect: null },
   { rank: 2, effect: 'pierce' },
   { rank: 2, effect: 'strike2' },
@@ -20,7 +21,7 @@ export const CARD_TYPES = [
   { rank: 2, effect: 'swap' },
   { rank: 2, effect: 'doubleblade' },
   { rank: 2, effect: 'deathcurse' },
-  // ── RANK 3 ──
+  // ── RANK 3 (ユニット) ──
   { rank: 3, effect: null },
   { rank: 3, effect: 'revenge' },
   { rank: 3, effect: 'strike3' },
@@ -28,6 +29,8 @@ export const CARD_TYPES = [
   { rank: 3, effect: 'doublecenter' },
   { rank: 3, effect: 'steal' },
   { rank: 3, effect: 'harakiri' },
+  // ── スペル ──
+  { rank: 5, effect: 'draw1', cardCategory: 'spell' },
 ];
 
 // デッキ状態（セッション永続・ゲームリセットをまたいで保持）
@@ -57,16 +60,29 @@ function fillRankRandom(types, total) {
   return result;
 }
 
-// サンプルデッキ生成（R1×15, R2×8, R3×7、各種ランダム配分）
-export function buildSampleDeck() {
-  const r1 = CARD_TYPES.filter((t) => t.rank === 1);
-  const r2 = CARD_TYPES.filter((t) => t.rank === 2);
-  const r3 = CARD_TYPES.filter((t) => t.rank === 3);
-  return [
-    ...fillRankRandom(r1, 15),
+// サンプルデッキ生成
+// includeSpells=true: R1×13 + R2×8 + R3×7 + draw1×2 = 30
+// includeSpells=false (敵用): R1×15 + R2×8 + R3×7 = 30
+export function buildSampleDeck(includeSpells = true) {
+  const units = CARD_TYPES.filter((t) => t.cardCategory !== 'spell');
+  const r1 = units.filter((t) => t.rank === 1);
+  const r2 = units.filter((t) => t.rank === 2);
+  const r3 = units.filter((t) => t.rank === 3);
+  const r1Count = includeSpells ? 13 : 15;
+  const result = [
+    ...fillRankRandom(r1, r1Count),
     ...fillRankRandom(r2, 8),
     ...fillRankRandom(r3, 7),
   ];
+  if (includeSpells) {
+    // draw1 を2枚追加（合計30枚）
+    const draw1 = CARD_TYPES.find((t) => t.effect === 'draw1');
+    if (draw1) {
+      result.push({ rank: draw1.rank, effect: draw1.effect, cardCategory: draw1.cardCategory });
+      result.push({ rank: draw1.rank, effect: draw1.effect, cardCategory: draw1.cardCategory });
+    }
+  }
+  return result;
 }
 
 // デッキを初期化（起動時に1度だけ呼ぶ）
@@ -83,7 +99,11 @@ export function getCardTypeCount(rank, effect) {
 export function addCardToDeck(rank, effect) {
   if (deckState.cards.length >= DECK_SIZE) return false;
   if (getCardTypeCount(rank, effect) >= MAX_COPIES) return false;
-  deckState.cards.push({ rank, effect });
+  // cardCategory は CARD_TYPES から取得
+  const typeEntry = CARD_TYPES.find((t) => t.rank === rank && t.effect === effect);
+  const cardCategory = typeEntry?.cardCategory ?? undefined;
+  const entry = cardCategory ? { rank, effect, cardCategory } : { rank, effect };
+  deckState.cards.push(entry);
   return true;
 }
 
@@ -117,6 +137,8 @@ export const FIXED_CARD_STATS = {
   doublecenter: { 3: { l: 6, r: 5 } },
   steal:        { 3: { l: 4, r: 6 } },
   harakiri:     { 3: { l: 7, r: 7 } },
+  // スペル（攻撃値なし）
+  draw1:        { 5: { l: 0, r: 0 } },
 };
 
 // rank と effect を受け取り { l, r } を返す

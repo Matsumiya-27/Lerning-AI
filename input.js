@@ -14,6 +14,7 @@ import {
   getSummonTributeOptions, chooseBestTributeOptionForTarget,
   getOverrideSummonSlots, performOverrideSummon, isOverrideSummonAvailable,
   confirmOfferingChoice, confirmStealChoice,
+  canActivateSpell, activateSpellEffect,
 } from './cards.js';
 import { endCurrentTurn, confirmDiscardPrompt } from './turn.js';
 
@@ -221,7 +222,17 @@ export function onPointerUp(event) {
 
     gameState.interactionLock = true;
 
-    if (targetSlot) {
+    // スペルカード: フィールドエリア（y < 500）へドロップで発動判定
+    if (card.cardCategory === 'spell') {
+      if (card.y < 500 && canActivateSpell(card, owner)) {
+        activateSpellEffect(card, owner);
+      } else {
+        startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
+          card.zone = 'hand';
+          gameState.interactionLock = false;
+        });
+      }
+    } else if (targetSlot) {
       const occupant = targetSlot.occupiedByCardId !== null ? getCardById(targetSlot.occupiedByCardId) : null;
       const isOpponentR1 = occupant && occupant.owner === opponent && occupant.rank === 1;
 
@@ -273,6 +284,7 @@ export function onPointerUp(event) {
         }
       }
     } else {
+      // スロット外にドロップ → 手札に戻す（ユニットのみ。スペルは上で処理済み）
       startMoveAnimation(card, pointerState.originalX, pointerState.originalY, () => {
         card.zone = 'hand';
         gameState.interactionLock = false;

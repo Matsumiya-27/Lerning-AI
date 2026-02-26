@@ -187,8 +187,8 @@ export function resetGame() {
   gameState.matchId += 1;
   // プレイヤーのデッキ山を再構築（シャッフルして積み直す）
   gameState.playerDeckPile = shuffleDeck();
-  // 敵のデッキ山はサンプルデッキをシャッフルして使用
-  const enemyDeck = buildSampleDeck();
+  // 敵のデッキ山はスペルなしのサンプルデッキをシャッフルして使用
+  const enemyDeck = buildSampleDeck(false);
   for (let i = enemyDeck.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     const tmp = enemyDeck[i]; enemyDeck[i] = enemyDeck[j]; enemyDeck[j] = tmp;
@@ -204,6 +204,7 @@ export function resetGame() {
   gameState.summonSelection.selectedIds = [];
   gameState.discardPrompt.active = false;
   gameState.discardPrompt.owner = null;
+  gameState.graveyard = { player: [], enemy: [] };
   gameState.result.winner = null;
   gameState.hp.player = STARTING_HP;
   gameState.hp.enemy = STARTING_HP;
