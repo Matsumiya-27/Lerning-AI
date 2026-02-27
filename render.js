@@ -8,6 +8,7 @@ import {
   ctx, gameState, slotCenters,
   getHandCards, getFieldCards, getCardById,
   getHpBadgePosition, getSummonSelectionButtons, getDiscardPromptButtons,
+  getGraveyardRankTotal,
   getOfferingChoiceButtons, getStealChoiceButtons,
 } from './state.js';
 import {
@@ -309,7 +310,10 @@ function drawCards(nowMs) {
     ctx.save();
     ctx.globalAlpha = alpha;
 
-    ctx.fillStyle = '#ffffff';
+    const isSpell = card.cardCategory === 'spell';
+
+    // スペルと通常ユニットで背景色を変える
+    ctx.fillStyle = isSpell ? '#1e1040' : '#ffffff';
     ctx.strokeStyle = ownerStroke;
     ctx.lineWidth = 3;
     ctx.fillRect(left, top, width, height);
@@ -320,102 +324,128 @@ function drawCards(nowMs) {
       ctx.fillRect(left, top, width, height);
     }
 
-    ctx.fillStyle = '#111111';
-    ctx.font = 'bold 12px sans-serif';
-    ctx.fillText(rankLabel, left + 10, top + 18);
-
-    ctx.font = 'bold 20px sans-serif';
-    // weakaura デバフ中は攻撃値をオレンジで表示
-    const leftDebuffed  = card.combat.baseAttackLeft  !== undefined && card.combat.attackLeft  < card.combat.baseAttackLeft;
-    const rightDebuffed = card.combat.baseAttackRight !== undefined && card.combat.attackRight < card.combat.baseAttackRight;
-
-    // エッジ系効果: フィールドのスロット1（左端隣）またはスロット3（右端隣）にいる場合、
-    // 端への攻撃値を能力適用後の値（+1/+2/∞）で表示する
-    let displayLeft  = card.combat.attackLeft;
-    let displayRight = card.combat.attackRight;
-    let leftEdgeBoosted  = false;
-    let rightEdgeBoosted = false;
-    if (card.zone === 'field' && (card.effect === 'edge1' || card.effect === 'edge2' || card.effect === 'edgewin')) {
-      const slot = card.fieldSlotIndex;
-      if (slot === 1) {
-        // 左攻撃がスロット0（左端）へ向かう → 左値をブースト表示
-        leftEdgeBoosted = true;
-        if (card.effect === 'edgewin') displayLeft = Infinity;
-        else if (card.effect === 'edge2') displayLeft = card.combat.attackLeft + 2;
-        else displayLeft = card.combat.attackLeft + 1;
-      }
-      if (slot === 3) {
-        // 右攻撃がスロット4（右端）へ向かう → 右値をブースト表示
-        rightEdgeBoosted = true;
-        if (card.effect === 'edgewin') displayRight = Infinity;
-        else if (card.effect === 'edge2') displayRight = card.combat.attackRight + 2;
-        else displayRight = card.combat.attackRight + 1;
-      }
-    }
-
-    const leftStr  = displayLeft  === Infinity ? '∞' : String(displayLeft);
-    const rightStr = displayRight === Infinity ? '∞' : String(displayRight);
-
-    ctx.fillStyle = leftEdgeBoosted ? '#00d4ff' : leftDebuffed ? '#e07020' : '#174f9b';
-    ctx.fillText(leftStr, left + 10, centerY + 7);
-
-    ctx.fillStyle = rightEdgeBoosted ? '#00d4ff' : rightDebuffed ? '#e07020' : '#9b1f1f';
-    const rightTextWidth = ctx.measureText(rightStr).width;
-    ctx.fillText(rightStr, left + width - 12 - rightTextWidth, centerY + 7);
-
-    // 効果テキスト（日本語）: 攻撃値とステータス表示の間に中央配置
-    if (card.effect) {
-      const effectColor = {
-        rush: '#666666', pierce: '#c8a000', revenge: '#9040d0',
-        strike2: '#e05020', strike3: '#ff2800',
-        edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
-        swap: '#c07800', doublecenter: '#b000b0',
-        doubleblade: '#c04000', weakaura: '#20a080',
-        offering: '#8060e0', steal: '#e0a000',
-        deathcurse: '#702090', harakiri: '#cc0000',
-      };
-      const effectJp = {
-        rush:         '調整中',
-        pierce:       '超過ダメージ',
-        revenge:      '撃破時に反撃',
-        strike2:      '2回連続攻撃',
-        strike3:      '3回連続攻撃',
-        edge1:        '端への攻撃+1',
-        edge2:        '端への攻撃+2',
-        edgewin:      '端への攻撃必勝',
-        swap:         '隣を入れ替え',
-        doublecenter: '両隣を同時攻撃',
-        doubleblade:  '諸刃の剣',
-        weakaura:     '隣の敵を弱体化',
-        offering:     '相手に贈与可',
-        steal:        '隣の敵を奪取',
-        deathcurse:   '破壊時に呪い',
-        harakiri:     '全カード破壊',
-      };
+    if (isSpell) {
+      // ── スペルカード表示 ──
+      // 上部: 「スペル」ラベル
+      ctx.fillStyle = '#a080ff';
       ctx.font = 'bold 10px sans-serif';
-      ctx.fillStyle = effectColor[card.effect] || '#888';
       ctx.textAlign = 'center';
-      ctx.fillText(effectJp[card.effect] || card.effect, centerX, centerY + 44);
-      ctx.textAlign = 'left';
-    }
+      ctx.fillText('スペル', centerX, top + 14);
 
-    // ステータス表示はフィールドカードのみ（手札では非表示）
-    if (card.zone === 'field') {
-      ctx.font = '11px sans-serif';
-      let actedText, actedColor;
-      if (card.combat.hasActedThisTurn) {
-        actedText = 'USED';
-        actedColor = '#888888';
-      } else if (card.combat.summonedThisTurn) {
-        // 召喚酔い：直接攻撃不可
-        actedText = 'ENTRY';
-        actedColor = '#c8a020';
-      } else {
-        actedText = 'READY';
-        actedColor = '#333333';
+      // 中央上: 発動条件 Rank
+      ctx.fillStyle = '#ffdd88';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(`発動:${card.rank}`, centerX, centerY - 8);
+
+      // 効果テキスト
+      const spellEffectJp = { draw1: 'カードを1枚引く' };
+      ctx.fillStyle = '#ccccff';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.fillText(spellEffectJp[card.effect] || card.effect || '─', centerX, centerY + 12);
+
+      // 種族
+      ctx.fillStyle = '#888899';
+      ctx.font = '9px sans-serif';
+      ctx.fillText(card.type || 'テスト', centerX, centerY + 30);
+
+      ctx.textAlign = 'left';
+    } else {
+      // ── ユニットカード表示 ──
+      ctx.fillStyle = '#111111';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.fillText(rankLabel, left + 10, top + 18);
+
+      // 種族（ランクラベルの下に小さく表示）
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = '#555555';
+      ctx.fillText(card.type || 'テスト', left + 10, top + 30);
+
+      // 属性（右上に小さく）
+      ctx.textAlign = 'right';
+      ctx.font = '9px sans-serif';
+      ctx.fillStyle = '#888888';
+      ctx.fillText(card.attribute || '無', left + width - 6, top + 14);
+      ctx.textAlign = 'left';
+
+      ctx.font = 'bold 20px sans-serif';
+      const leftDebuffed  = card.combat.baseAttackLeft  !== undefined && card.combat.attackLeft  < card.combat.baseAttackLeft;
+      const rightDebuffed = card.combat.baseAttackRight !== undefined && card.combat.attackRight < card.combat.baseAttackRight;
+
+      // エッジ系効果: フィールドのスロット1 or 3 にいる場合、端への攻撃値をブースト表示
+      let displayLeft  = card.combat.attackLeft;
+      let displayRight = card.combat.attackRight;
+      let leftEdgeBoosted  = false;
+      let rightEdgeBoosted = false;
+      if (card.zone === 'field' && (card.effect === 'edge1' || card.effect === 'edge2' || card.effect === 'edgewin')) {
+        const slot = card.fieldSlotIndex;
+        if (slot === 1) {
+          leftEdgeBoosted = true;
+          if (card.effect === 'edgewin') displayLeft = Infinity;
+          else if (card.effect === 'edge2') displayLeft = card.combat.attackLeft + 2;
+          else displayLeft = card.combat.attackLeft + 1;
+        }
+        if (slot === 3) {
+          rightEdgeBoosted = true;
+          if (card.effect === 'edgewin') displayRight = Infinity;
+          else if (card.effect === 'edge2') displayRight = card.combat.attackRight + 2;
+          else displayRight = card.combat.attackRight + 1;
+        }
       }
-      ctx.fillStyle = actedColor;
-      ctx.fillText(actedText, left + 10, top + height - 12);
+
+      const leftStr  = displayLeft  === Infinity ? '∞' : String(displayLeft);
+      const rightStr = displayRight === Infinity ? '∞' : String(displayRight);
+
+      ctx.fillStyle = leftEdgeBoosted ? '#00d4ff' : leftDebuffed ? '#e07020' : '#174f9b';
+      ctx.fillText(leftStr, left + 10, centerY + 7);
+
+      ctx.fillStyle = rightEdgeBoosted ? '#00d4ff' : rightDebuffed ? '#e07020' : '#9b1f1f';
+      const rightTextWidth = ctx.measureText(rightStr).width;
+      ctx.fillText(rightStr, left + width - 12 - rightTextWidth, centerY + 7);
+
+      // 効果テキスト
+      if (card.effect) {
+        const effectColor = {
+          rush: '#666666', pierce: '#c8a000', revenge: '#9040d0',
+          strike2: '#e05020', strike3: '#ff2800',
+          edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
+          swap: '#c07800', doublecenter: '#b000b0',
+          doubleblade: '#c04000', weakaura: '#20a080',
+          offering: '#8060e0', steal: '#e0a000',
+          deathcurse: '#702090', harakiri: '#cc0000',
+        };
+        const effectJp = {
+          rush:         '調整中',
+          pierce:       '超過ダメージ',
+          revenge:      '撃破時に反撃',
+          strike2:      '2回連続攻撃',
+          strike3:      '3回連続攻撃',
+          edge1:        '端への攻撃+1',
+          edge2:        '端への攻撃+2',
+          edgewin:      '端への攻撃必勝',
+          swap:         '隣を入れ替え',
+          doublecenter: '両隣を同時攻撃',
+          doubleblade:  '諸刃の剣',
+          weakaura:     '隣の敵を弱体化',
+          offering:     '相手に贈与可',
+          steal:        '隣の敵を奪取',
+          deathcurse:   '破壊時に呪い',
+          harakiri:     '全カード破壊',
+        };
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillStyle = effectColor[card.effect] || '#888';
+        ctx.textAlign = 'center';
+        ctx.fillText(effectJp[card.effect] || card.effect, centerX, centerY + 44);
+        ctx.textAlign = 'left';
+      }
+
+      // フィールドカードのみ: USED/READY ステータス
+      if (card.zone === 'field') {
+        ctx.font = '11px sans-serif';
+        const actedText  = card.combat.hasActedThisTurn ? 'USED' : 'READY';
+        const actedColor = card.combat.hasActedThisTurn ? '#888888' : '#333333';
+        ctx.fillStyle = actedColor;
+        ctx.fillText(actedText, left + 10, top + height - 12);
+      }
     }
 
     if (nowMs < card.ui.crossUntilMs) {
@@ -716,6 +746,59 @@ function drawDiscardPrompt() {
   ctx.restore();
 }
 
+function drawGraveyardPile(owner) {
+  const cx = 43;
+  const cy = owner === 'player' ? 575 : 145;
+  const w = 54;
+  const h = 76;
+  const x = cx - w / 2;
+  const y = cy - h / 2;
+  const rankTotal = getGraveyardRankTotal(owner);
+  const count = (gameState.graveyard[owner] || []).length;
+
+  ctx.save();
+
+  // 枠線（常時）
+  ctx.strokeStyle = owner === 'player' ? '#4da3ff' : '#ff7272';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 3]);
+  ctx.strokeRect(x, y, w, h);
+  ctx.setLineDash([]);
+
+  if (count > 0) {
+    // カード背景
+    ctx.fillStyle = owner === 'player' ? '#101e38' : '#301010';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = owner === 'player' ? '#4da3ff' : '#ff7272';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(x, y, w, h);
+
+    // Rank合計（大きく中央）
+    ctx.font = 'bold 22px sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText(String(rankTotal), cx, cy + 8);
+
+    // 枚数（小さく下）
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#aaaaaa';
+    ctx.fillText(`${count}枚`, cx, cy + 26);
+  }
+
+  // ラベル「墓地」
+  ctx.font = 'bold 11px sans-serif';
+  ctx.fillStyle = '#888888';
+  ctx.textAlign = 'center';
+  ctx.fillText('墓地', cx, y - 4);
+
+  ctx.restore();
+}
+
+function drawGraveyards() {
+  drawGraveyardPile('player');
+  drawGraveyardPile('enemy');
+}
+
 function drawDeckCounts() {
   const playerCount = gameState.playerDeckPile.length;
   const enemyCount = gameState.enemyDeckPile ? gameState.enemyDeckPile.length : 0;
@@ -779,6 +862,7 @@ export function draw(nowMs) {
   drawHpBadge('player', playerHpPos.x, playerHpPos.y);
   drawDamageTexts(nowMs);
   drawHudLabels();
+  drawGraveyards();
   drawDeckCounts();
   drawCanvasEndTurnButton();
   drawCoinToss(nowMs);

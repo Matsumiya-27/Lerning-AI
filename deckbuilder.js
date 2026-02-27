@@ -24,6 +24,7 @@ const EFFECT_JP = {
   steal:        '隣の敵を奪取',
   deathcurse:   '破壊時に呪い',
   harakiri:     '全カード破壊',
+  draw1:        'カードを1枚引く',
 };
 
 const EFFECT_COLOR = {
@@ -43,6 +44,7 @@ const EFFECT_COLOR = {
   steal:        '#e0a000',
   deathcurse:   '#702090',
   harakiri:     '#cc0000',
+  draw1:        '#8060e0',
 };
 
 const RANK_BG     = { 1: '#1a2e4a', 2: '#1a3a38', 3: '#2e1a50' };
@@ -61,15 +63,27 @@ function getTotalLabel(rank, effect) {
 
 // ── カード要素の生成 ──
 // onAdd: 左クリック・左スワイプ時、onRemove: 右クリック・右スワイプ時
-function createCardEl(rank, effect, onAdd, onRemove) {
+function createCardEl(rank, effect, onAdd, onRemove, cardCategory = 'unit') {
+  const isSpell = cardCategory === 'spell';
   const div = document.createElement('div');
   div.className = 'db-card';
-  div.style.background = RANK_BG[rank];
-  div.style.border = `2px solid ${RANK_BORDER[rank]}`;
+
+  if (isSpell) {
+    div.style.background = '#1e1040';
+    div.style.border = '2px solid #5030a0';
+  } else {
+    div.style.background = RANK_BG[rank];
+    div.style.border = `2px solid ${RANK_BORDER[rank]}`;
+  }
 
   const rankLabel = document.createElement('div');
   rankLabel.className = 'db-card-rank';
-  rankLabel.textContent = `RANK ${rank}`;
+  if (isSpell) {
+    rankLabel.textContent = 'スペル';
+    rankLabel.style.color = '#a080ff';
+  } else {
+    rankLabel.textContent = `RANK ${rank}`;
+  }
   div.appendChild(rankLabel);
 
   const effectLabel = document.createElement('div');
@@ -83,15 +97,24 @@ function createCardEl(rank, effect, onAdd, onRemove) {
   }
   div.appendChild(effectLabel);
 
-  const statsDiv = document.createElement('div');
-  statsDiv.className = 'db-card-stats';
-  statsDiv.textContent = getDisplayStats(rank, effect);
-  div.appendChild(statsDiv);
+  if (isSpell) {
+    // スペルは発動条件のRankと「LA/RA なし」を表示
+    const condDiv = document.createElement('div');
+    condDiv.className = 'db-card-stats';
+    condDiv.textContent = `発動:${rank}`;
+    condDiv.style.color = '#ffdd88';
+    div.appendChild(condDiv);
+  } else {
+    const statsDiv = document.createElement('div');
+    statsDiv.className = 'db-card-stats';
+    statsDiv.textContent = getDisplayStats(rank, effect);
+    div.appendChild(statsDiv);
 
-  const totalDiv = document.createElement('div');
-  totalDiv.className = 'db-card-total';
-  totalDiv.textContent = `合計 ${getTotalLabel(rank, effect)}`;
-  div.appendChild(totalDiv);
+    const totalDiv = document.createElement('div');
+    totalDiv.className = 'db-card-total';
+    totalDiv.textContent = `合計 ${getTotalLabel(rank, effect)}`;
+    div.appendChild(totalDiv);
+  }
 
   // スワイプ検出用
   let swipeStartX = null;
@@ -156,7 +179,7 @@ function renderDeckPanel() {
     return (a.effect ?? '') < (b.effect ?? '') ? -1 : 1;
   });
 
-  sorted.forEach(({ rank, effect }) => {
+  sorted.forEach(({ rank, effect, cardCategory }) => {
     const onAdd = () => {
       if (getCardTypeCount(rank, effect) < MAX_COPIES && deckState.cards.length < DECK_SIZE) {
         addCardToDeck(rank, effect);
@@ -167,7 +190,7 @@ function renderDeckPanel() {
       removeCardFromDeck(rank, effect);
       refresh();
     };
-    const el = createCardEl(rank, effect, onAdd, onRemove);
+    const el = createCardEl(rank, effect, onAdd, onRemove, cardCategory ?? 'unit');
     el.title = '左クリック/左スワイプ：追加　右クリック/右スワイプ：削除';
     grid.appendChild(el);
   });
@@ -185,7 +208,7 @@ function renderCollectionPanel() {
     return (a.effect ?? '') < (b.effect ?? '') ? -1 : 1;
   });
 
-  types.forEach(({ rank, effect }) => {
+  types.forEach(({ rank, effect, cardCategory }) => {
     const copiesInDeck = getCardTypeCount(rank, effect);
     const deckFull     = deckState.cards.length >= DECK_SIZE;
     const maxReached   = copiesInDeck >= MAX_COPIES;
@@ -195,7 +218,7 @@ function renderCollectionPanel() {
     const onAdd    = canAdd    ? () => { addCardToDeck(rank, effect);    refresh(); } : null;
     const onRemove = canRemove ? () => { removeCardFromDeck(rank, effect); refresh(); } : null;
 
-    const el = createCardEl(rank, effect, onAdd, onRemove);
+    const el = createCardEl(rank, effect, onAdd, onRemove, cardCategory ?? 'unit');
 
     // コピー数バッジ（右下）
     const badge = document.createElement('div');
