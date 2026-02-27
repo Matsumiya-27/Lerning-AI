@@ -14,6 +14,7 @@ import {
 import {
   drawRandomCardToHand, buildInitialCards,
   isPlayerMainTurn, canOwnerAct, finishGame,
+  applyBoardEffects,
 } from './cards.js';
 import { executeEnemyMainAction, aiShouldDiscardHand } from './ai.js';
 import { shuffleDeck, buildSampleDeck } from './deck.js';
@@ -45,6 +46,13 @@ export function applyDrawPhase(owner) {
 }
 
 export function clearActedFlags(owner) {
+  // ターン開始時: 全フィールドカードの一時攻撃力減算をリセット
+  gameState.cards.filter((c) => c.zone === 'field' && !c.ui.pendingRemoval).forEach((c) => {
+    c.combat.tempAttackLeftReduction  = 0;
+    c.combat.tempAttackRightReduction = 0;
+  });
+  applyBoardEffects();
+
   getFieldCards(owner).forEach((card) => {
     card.combat.hasActedThisTurn = false;
     card.combat.summonedThisTurn = false;

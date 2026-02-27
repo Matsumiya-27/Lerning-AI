@@ -338,7 +338,12 @@ function drawCards(nowMs) {
       ctx.fillText(`発動:${card.rank}`, centerX, centerY - 8);
 
       // 効果テキスト
-      const spellEffectJp = { draw1: 'カードを1枚引く' };
+      const spellEffectJp = {
+        draw1:        'カードを1枚引く',
+        singleHit10:  '敵1体に1/0',
+        aoeHit33:     '敵全体に3/3',
+        fieldHit1010: '場全体に10/10',
+      };
       ctx.fillStyle = '#ccccff';
       ctx.font = 'bold 10px sans-serif';
       ctx.fillText(spellEffectJp[card.effect] || card.effect || '─', centerX, centerY + 12);
@@ -376,7 +381,8 @@ function drawCards(nowMs) {
       let displayRight = card.combat.attackRight;
       let leftEdgeBoosted  = false;
       let rightEdgeBoosted = false;
-      if (card.zone === 'field' && (card.effect === 'edge1' || card.effect === 'edge2' || card.effect === 'edgewin')) {
+      if (card.zone === 'field' && (card.effect === 'edge1' || card.effect === 'edge2' || card.effect === 'edgewin')
+        && gameState.turn.currentPlayer === card.owner && gameState.turn.phase === 'main') {
         const slot = card.fieldSlotIndex;
         if (slot === 1) {
           leftEdgeBoosted = true;

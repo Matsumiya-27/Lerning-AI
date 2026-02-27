@@ -25,6 +25,9 @@ const EFFECT_JP = {
   deathcurse:   '破壊時に呪い',
   harakiri:     '全カード破壊',
   draw1:        'カードを1枚引く',
+  singleHit10:  '敵1体に1/0',
+  aoeHit33:     '敵全体に3/3',
+  fieldHit1010: '場全体に10/10',
 };
 
 const EFFECT_COLOR = {
@@ -45,6 +48,9 @@ const EFFECT_COLOR = {
   deathcurse:   '#702090',
   harakiri:     '#cc0000',
   draw1:        '#8060e0',
+  singleHit10:  '#c060d0',
+  aoeHit33:     '#a040c0',
+  fieldHit1010: '#802090',
 };
 
 const RANK_BG     = { 1: '#1a2e4a', 2: '#1a3a38', 3: '#2e1a50' };

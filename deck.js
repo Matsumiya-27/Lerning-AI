@@ -30,7 +30,10 @@ export const CARD_TYPES = [
   { rank: 3, effect: 'steal' },
   { rank: 3, effect: 'harakiri' },
   // ── スペル ──
-  { rank: 5, effect: 'draw1', cardCategory: 'spell' },
+  { rank: 0, effect: 'singleHit10',  cardCategory: 'spell' },
+  { rank: 5, effect: 'draw1',        cardCategory: 'spell' },
+  { rank: 5, effect: 'aoeHit33',     cardCategory: 'spell' },
+  { rank: 10, effect: 'fieldHit1010', cardCategory: 'spell' },
 ];
 
 // デッキ状態（セッション永続・ゲームリセットをまたいで保持）
@@ -138,7 +141,10 @@ export const FIXED_CARD_STATS = {
   steal:        { 3: { l: 4, r: 6 } },
   harakiri:     { 3: { l: 7, r: 7 } },
   // スペル（攻撃値なし）
-  draw1:        { 5: { l: 0, r: 0 } },
+  draw1:        { 5:  { l: 0, r: 0 } },
+  singleHit10:  { 0:  { l: 0, r: 0 } },
+  aoeHit33:     { 5:  { l: 0, r: 0 } },
+  fieldHit1010: { 10: { l: 0, r: 0 } },
 };
 
 // rank と effect を受け取り { l, r } を返す
