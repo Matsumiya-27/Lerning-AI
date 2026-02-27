@@ -39,6 +39,8 @@ export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotI
       baseAttackRight: attackRight,
       hasActedThisTurn: false,
       summonedThisTurn: false,
+      tempAttackLeftReduction: 0,
+      tempAttackRightReduction: 0,
     },
     ui: {
       isDragging: false,
@@ -604,6 +606,18 @@ export function resolveSwipeAttack(attacker, direction) {
   const attackerLost = destroyedCards.includes(attacker);
   const defenderLost = destroyedCards.includes(defender);
 
+  // 生き残ったカードへの一時攻撃力減算（そのターン中のみ）
+  // 攻撃側が負けた（defender が生存）: defender の攻撃に使った方向を攻撃側の攻撃力分だけ減算
+  if (attackerLost && !defenderLost) {
+    if (direction === 'left') {
+      // attacker が左スワイプ: attacker.attackLeft vs defender.attackRight
+      defender.combat.tempAttackRightReduction += attackerPower;
+    } else {
+      // attacker が右スワイプ: attacker.attackRight vs defender.attackLeft
+      defender.combat.tempAttackLeftReduction += attackerPower;
+    }
+  }
+
   // 効果ダメージリストを構築
   const effectDamageList = []; // { targetOwner, amount, label, color }
 
@@ -813,18 +827,103 @@ export function activateSpellEffect(card, owner) {
   const matchIdAtStart = gameState.matchId;
   const nowMs = performance.now();
 
+  // 使用済みスペルをまず墓地へ送る
+  markCardDestroyed(card, nowMs);
+
+  const opponent = owner === 'player' ? 'enemy' : 'player';
+
   if (card.effect === 'draw1') {
     drawRandomCardToHand(owner);
     reflowHand(owner);
+    setTimeout(() => {
+      if (gameState.matchId !== matchIdAtStart) return;
+      gameState.interactionLock = false;
+    }, DESTROY_ANIMATION_MS + 30);
+    return;
   }
 
-  // 使用済みスペルを墓地へ送る（pendingRemoval がセットされ、markCardDestroyed 内で graveyard に追加される）
-  markCardDestroyed(card, nowMs);
+  if (card.effect === 'singleHit10') {
+    // 敵1体に1/0の特殊攻撃: LA が最も低い敵（破壊しやすい）を自動選択
+    const enemies = getFieldCards(opponent);
+    const target = enemies.sort((a, b) => a.combat.attackLeft - b.combat.attackLeft)[0] ?? null;
+    if (target) {
+      performSpecialAttack([target], 1, 0, matchIdAtStart);
+    } else {
+      setTimeout(() => {
+        if (gameState.matchId !== matchIdAtStart) return;
+        gameState.interactionLock = false;
+      }, DESTROY_ANIMATION_MS + 30);
+    }
+    return;
+  }
+
+  if (card.effect === 'aoeHit33') {
+    // 敵全体に3/3の特殊攻撃
+    const enemies = getFieldCards(opponent);
+    if (enemies.length > 0) {
+      performSpecialAttack(enemies, 3, 3, matchIdAtStart);
+    } else {
+      setTimeout(() => {
+        if (gameState.matchId !== matchIdAtStart) return;
+        gameState.interactionLock = false;
+      }, DESTROY_ANIMATION_MS + 30);
+    }
+    return;
+  }
+
+  if (card.effect === 'fieldHit1010') {
+    // 場全体（双方）に10/10の特殊攻撃
+    const allField = [...getFieldCards('player'), ...getFieldCards('enemy')];
+    if (allField.length > 0) {
+      performSpecialAttack(allField, 10, 10, matchIdAtStart);
+    } else {
+      setTimeout(() => {
+        if (gameState.matchId !== matchIdAtStart) return;
+        gameState.interactionLock = false;
+      }, DESTROY_ANIMATION_MS + 30);
+    }
+    return;
+  }
 
   setTimeout(() => {
     if (gameState.matchId !== matchIdAtStart) return;
     gameState.interactionLock = false;
   }, DESTROY_ANIMATION_MS + 30);
+}
+
+// ===== 特殊攻撃 =====
+
+// targets: 攻撃対象カードの配列。deltaLeft/deltaRight: LA/RAから減算する値（>= 0）
+// 位置・隣接無関係、反撃なし。0以下になったカードは破壊。
+function performSpecialAttack(targets, deltaLeft, deltaRight, matchIdAtStart) {
+  if (targets.length === 0) return;
+  const nowMs = performance.now();
+  const toDestroy = [];
+
+  targets.forEach((target) => {
+    target.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
+    // baseAttack を直接減算（恒久的な攻撃力ダウン）
+    target.combat.baseAttackLeft  = Math.max(0, target.combat.baseAttackLeft  - deltaLeft);
+    target.combat.baseAttackRight = Math.max(0, target.combat.baseAttackRight - deltaRight);
+    if (target.combat.baseAttackLeft <= 0 || target.combat.baseAttackRight <= 0) {
+      toDestroy.push(target);
+    }
+  });
+
+  addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20, `SPELL -${deltaLeft}/${deltaRight}`, '#c080ff');
+  triggerScreenShake(7, 200);
+
+  setTimeout(() => {
+    if (gameState.matchId !== matchIdAtStart) return;
+    const removeAt = performance.now();
+    toDestroy.forEach((c) => markCardDestroyed(c, removeAt));
+    setTimeout(() => {
+      if (gameState.matchId !== matchIdAtStart) return;
+      recomputeSlotOccupancy();
+      applyBoardEffects();
+      gameState.interactionLock = false;
+    }, DESTROY_ANIMATION_MS);
+  }, HIT_FLASH_MS);
 }
 
 export function finishGame(winner) {
@@ -926,6 +1025,16 @@ export function applyBoardEffects() {
         neighbor.combat.attackRight = Math.max(0, neighbor.combat.attackRight - 1);
       }
     });
+  });
+
+  // 一時攻撃力減算（戦闘で与えたダメージ分、ターン中のみ）
+  fieldCards.forEach((c) => {
+    if (c.combat.tempAttackLeftReduction > 0) {
+      c.combat.attackLeft  = Math.max(0, c.combat.attackLeft  - c.combat.tempAttackLeftReduction);
+    }
+    if (c.combat.tempAttackRightReduction > 0) {
+      c.combat.attackRight = Math.max(0, c.combat.attackRight - c.combat.tempAttackRightReduction);
+    }
   });
 }
 
