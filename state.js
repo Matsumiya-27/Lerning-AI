@@ -45,8 +45,13 @@ export const gameState = {
   playerDeckPile: [],
   // 敵のデッキ山（サンプルデッキをシャッフルして積む）
   enemyDeckPile: [],
-  // 墓地: 場を離れたカード・捨て札の要約（rank + cardCategory のみ保持）
+  // 退場済み: 場を離れたカード・捨て札の要約（rank + cardCategory + attribute のみ保持）
   graveyard: { player: [], enemy: [] },
+  // マナ: 退場済みカードのrank分を色別に積算（使用時に減算）
+  mana: {
+    player: { red: 0, blue: 0, green: 0, black: 0, white: 0, none: 0 },
+    enemy:  { red: 0, blue: 0, green: 0, black: 0, white: 0, none: 0 },
+  },
   activePointer: null,
   summonSelection: {
     active: false,
@@ -224,11 +229,15 @@ export function markCardDestroyed(card, nowMs) {
   card.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
   card.ui.pendingRemoval = true;
 
-  // 墓地に追加（スペルは0扱い、ユニットはrank分を積算対象に）
+  // 退場済みに追加し、マナを積算（スペルはマナ0扱い）
+  const rankVal  = (card.cardCategory === 'spell') ? 0 : (card.rank ?? 0);
+  const colorKey = card.attribute ?? 'none';
   gameState.graveyard[card.owner].push({
     rank: card.rank ?? 0,
     cardCategory: card.cardCategory ?? 'unit',
+    attribute: card.attribute ?? null,
   });
+  gameState.mana[card.owner][colorKey] += rankVal;
 
   if (card.fieldSlotIndex !== null) {
     const slot = slotCenters[card.fieldSlotIndex];
@@ -244,12 +253,24 @@ export function markCardDestroyed(card, nowMs) {
   card.fieldSlotIndex = null;
 }
 
-// 墓地のRank合計を返す（スペルは0扱い）
-export function getGraveyardRankTotal(owner) {
-  return (gameState.graveyard[owner] || []).reduce((sum, entry) => {
-    if (entry.cardCategory === 'spell') return sum;
-    return sum + (entry.rank || 0);
-  }, 0);
+// マナ合計を計算して返す（毎回計算・保持しない）
+export function getManaTotal(owner) {
+  return Object.values(gameState.mana[owner]).reduce((s, v) => s + v, 0);
+}
+
+// マナを消費する（同色優先、不足分は他色から補填）
+export function useMana(owner, amount, attribute) {
+  const m = gameState.mana[owner];
+  const ck = attribute ?? 'none';
+  const fromColor = Math.min(m[ck] ?? 0, amount);
+  m[ck] -= fromColor;
+  let rest = amount - fromColor;
+  for (const k of ['red', 'blue', 'green', 'black', 'white', 'none']) {
+    if (k === ck || rest <= 0) continue;
+    const take = Math.min(m[k] ?? 0, rest);
+    m[k] -= take;
+    rest  -= take;
+  }
 }
 
 export function triggerUsedCardFeedback(card, nowMs) {
