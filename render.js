@@ -8,13 +8,51 @@ import {
   ctx, gameState, slotCenters,
   getHandCards, getFieldCards, getCardById,
   getHpBadgePosition, getSummonSelectionButtons, getDiscardPromptButtons,
-  getGraveyardRankTotal,
+  getManaTotal,
   getOfferingChoiceButtons, getStealChoiceButtons,
 } from './state.js';
 import {
   canUseEndTurnButton, getSelectedTributeCards, canConfirmSummonSelection,
   isOverrideSummonAvailable, getOverrideSummonSlots,
 } from './cards.js';
+
+// ── 属性カラーマップ ──
+const ATTR_COLOR = {
+  red:   '#c82020',
+  blue:  '#2060c8',
+  green: '#20a040',
+  black: '#282828',
+  white: '#c0b870',
+  null:  '#5a6080',
+};
+const ATTR_BORDER = {
+  red:   '#7a1010',
+  blue:  '#103880',
+  green: '#105020',
+  black: '#181818',
+  white: '#706840',
+  null:  '#323650',
+};
+const ATTR_JP = {
+  red: '赤', blue: '青', green: '緑', black: '黒', white: '白', null: '無',
+};
+
+// 効果テキスト自動生成
+function effectDisplayText(eff) {
+  if (!eff) return '';
+  switch (eff.type) {
+    case 'adjEnemy':     return `隣接する敵1体に${eff.l}/${eff.r}`;
+    case 'anyEnemy':     return `敵1体に${eff.l}/${eff.r}`;
+    case 'aoeExSelf':    return `全体に${eff.l}/${eff.r}（自己除く）`;
+    case 'adjAll':       return `両隣に${eff.l}/${eff.r}`;
+    case 'manaGate':     return `[${eff.cost}マナ]${effectDisplayText(eff.inner)}`;
+    case 'playerDamage': return `相手に${eff.amount}ダメージ`;
+    case 'boostSelf':    return `自身+${eff.l}/+${eff.r}`;
+    case 'handReset':    return `手札捨て+${eff.draw}ドロー`;
+    case 'colorScale':   return `X/X(${ATTR_JP[eff.color] ?? eff.color}マナ=X)`;
+    default: return eff.type;
+  }
+}
 
 function drawTable() {
   ctx.fillStyle = '#1d2f4f';
@@ -304,19 +342,28 @@ function drawCards(nowMs) {
     const left = centerX - width / 2;
     const top = centerY - height / 2;
 
-    const ownerStroke = card.owner === 'player' ? '#4da3ff' : '#ff7272';
     const rankLabel = `RANK ${card.rank}`;
+    const attrKey = card.attribute ?? 'null';
 
     ctx.save();
     ctx.globalAlpha = alpha;
 
     const isSpell = card.cardCategory === 'spell';
 
-    // スペルと通常ユニットで背景色を変える
+    // カード背景: ユニットは白+属性色16%オーバーレイ、スペルは紫暗め
     ctx.fillStyle = isSpell ? '#1e1040' : '#ffffff';
-    ctx.strokeStyle = ownerStroke;
-    ctx.lineWidth = 3;
     ctx.fillRect(left, top, width, height);
+    if (!isSpell) {
+      // 属性色オーバーレイ（16% alpha）
+      const ac = ATTR_COLOR[attrKey] ?? ATTR_COLOR.null;
+      ctx.fillStyle = ac;
+      ctx.globalAlpha = alpha * 0.16;
+      ctx.fillRect(left, top, width, height);
+      ctx.globalAlpha = alpha;
+    }
+    // カード枠: 属性の暗い色
+    ctx.strokeStyle = isSpell ? '#5030a0' : (ATTR_BORDER[attrKey] ?? ATTR_BORDER.null);
+    ctx.lineWidth = 3;
     ctx.strokeRect(left, top, width, height);
 
     if (nowMs < card.ui.hitFlashUntilMs) {
@@ -368,8 +415,8 @@ function drawCards(nowMs) {
       // 属性（右上に小さく）
       ctx.textAlign = 'right';
       ctx.font = '9px sans-serif';
-      ctx.fillStyle = '#888888';
-      ctx.fillText(card.attribute || '無', left + width - 6, top + 14);
+      ctx.fillStyle = ATTR_COLOR[attrKey] ?? ATTR_COLOR.null;
+      ctx.fillText(ATTR_JP[attrKey] ?? '無', left + width - 6, top + 14);
       ctx.textAlign = 'left';
 
       ctx.font = 'bold 20px sans-serif';
@@ -408,41 +455,49 @@ function drawCards(nowMs) {
       const rightTextWidth = ctx.measureText(rightStr).width;
       ctx.fillText(rightStr, left + width - 12 - rightTextWidth, centerY + 7);
 
-      // 効果テキスト
+      // 効果テキスト（旧 effect 文字列 or 新 effects/keywords 配列）
+      const effectColor = {
+        rush: '#666666', pierce: '#c8a000', revenge: '#9040d0',
+        strike2: '#e05020', strike3: '#ff2800',
+        edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
+        swap: '#c07800', doublecenter: '#b000b0',
+        doubleblade: '#c04000', weakaura: '#20a080',
+        offering: '#8060e0', steal: '#e0a000',
+        deathcurse: '#702090', harakiri: '#cc0000',
+      };
+      const effectJp = {
+        rush:         '調整中',
+        pierce:       '超過ダメージ',
+        revenge:      '撃破時に反撃',
+        strike2:      '2回連続攻撃',
+        strike3:      '3回連続攻撃',
+        edge1:        '端への攻撃+1',
+        edge2:        '端への攻撃+2',
+        edgewin:      '端への攻撃必勝',
+        swap:         '隣を入れ替え',
+        doublecenter: '両隣を同時攻撃',
+        doubleblade:  '諸刃の剣',
+        weakaura:     '隣の敵を弱体化',
+        offering:     '相手に贈与可',
+        steal:        '隣の敵を奪取',
+        deathcurse:   '破壊時に呪い',
+        harakiri:     '全カード破壊',
+      };
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
       if (card.effect) {
-        const effectColor = {
-          rush: '#666666', pierce: '#c8a000', revenge: '#9040d0',
-          strike2: '#e05020', strike3: '#ff2800',
-          edge1: '#1a80d0', edge2: '#0050ff', edgewin: '#00b8e0',
-          swap: '#c07800', doublecenter: '#b000b0',
-          doubleblade: '#c04000', weakaura: '#20a080',
-          offering: '#8060e0', steal: '#e0a000',
-          deathcurse: '#702090', harakiri: '#cc0000',
-        };
-        const effectJp = {
-          rush:         '調整中',
-          pierce:       '超過ダメージ',
-          revenge:      '撃破時に反撃',
-          strike2:      '2回連続攻撃',
-          strike3:      '3回連続攻撃',
-          edge1:        '端への攻撃+1',
-          edge2:        '端への攻撃+2',
-          edgewin:      '端への攻撃必勝',
-          swap:         '隣を入れ替え',
-          doublecenter: '両隣を同時攻撃',
-          doubleblade:  '諸刃の剣',
-          weakaura:     '隣の敵を弱体化',
-          offering:     '相手に贈与可',
-          steal:        '隣の敵を奪取',
-          deathcurse:   '破壊時に呪い',
-          harakiri:     '全カード破壊',
-        };
-        ctx.font = 'bold 10px sans-serif';
         ctx.fillStyle = effectColor[card.effect] || '#888';
-        ctx.textAlign = 'center';
         ctx.fillText(effectJp[card.effect] || card.effect, centerX, centerY + 44);
-        ctx.textAlign = 'left';
+      } else if (card.effects && card.effects.length > 0) {
+        // 新 effects 配列: 最初の効果のみ表示
+        ctx.fillStyle = ATTR_COLOR[attrKey] ?? '#aaa';
+        ctx.fillText(effectDisplayText(card.effects[0]), centerX, centerY + 38);
       }
+      if (card.keywords && card.keywords.length > 0) {
+        ctx.fillStyle = '#cc4444';
+        ctx.fillText(card.keywords.join(' '), centerX, centerY + 50);
+      }
+      ctx.textAlign = 'left';
 
       // フィールドカードのみ: USED/READY ステータス
       if (card.zone === 'field') {
@@ -759,7 +814,7 @@ function drawGraveyardPile(owner) {
   const h = 76;
   const x = cx - w / 2;
   const y = cy - h / 2;
-  const rankTotal = getGraveyardRankTotal(owner);
+  const manaTotal = getManaTotal(owner);
   const count = (gameState.graveyard[owner] || []).length;
 
   ctx.save();
@@ -779,23 +834,33 @@ function drawGraveyardPile(owner) {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(x, y, w, h);
 
-    // Rank合計（大きく中央）
+    // マナ合計（大きく中央）
     ctx.font = 'bold 22px sans-serif';
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
-    ctx.fillText(String(rankTotal), cx, cy + 8);
+    ctx.fillText(String(manaTotal), cx, cy + 4);
 
     // 枚数（小さく下）
     ctx.font = '10px sans-serif';
     ctx.fillStyle = '#aaaaaa';
-    ctx.fillText(`${count}枚`, cx, cy + 26);
+    ctx.fillText(`${count}枚`, cx, cy + 20);
+
+    // 色マナ内訳（非ゼロのみ、8px フォント）
+    const mana = gameState.mana[owner];
+    const colorEntries = Object.entries(mana).filter(([, v]) => v > 0);
+    if (colorEntries.length > 0) {
+      ctx.font = '8px sans-serif';
+      const parts = colorEntries.map(([k, v]) => `${ATTR_JP[k] ?? k}${v}`).join(' ');
+      ctx.fillStyle = '#cccccc';
+      ctx.fillText(parts, cx, cy + 34);
+    }
   }
 
-  // ラベル「墓地」
-  ctx.font = 'bold 11px sans-serif';
+  // ラベル「退場済み」
+  ctx.font = 'bold 10px sans-serif';
   ctx.fillStyle = '#888888';
   ctx.textAlign = 'center';
-  ctx.fillText('墓地', cx, y - 4);
+  ctx.fillText('退場済み', cx, y - 4);
 
   ctx.restore();
 }

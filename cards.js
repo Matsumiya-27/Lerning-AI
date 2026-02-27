@@ -5,7 +5,7 @@ import {
   CANVAS_WIDTH, CANVAS_HEIGHT,
   MAX_FIELD_SLOTS,
 } from './constants.js';
-import { getCardStats } from './deck.js';
+import { getCardType } from './deck.js';
 import {
   gameState, slotCenters, getHandCenter,
   getCardById, getCardAtSlot, getHandCards, getFieldCards,
@@ -13,12 +13,12 @@ import {
   startMoveAnimation, markCardDestroyed, recomputeSlotOccupancy,
   triggerUsedCardFeedback, triggerScreenShake, addDamageText,
   triggerHpPulse, showBanner, getHpBadgePosition,
-  getGraveyardRankTotal,
+  getManaTotal, useMana,
 } from './state.js';
 
 // ===== カードファクトリ =====
 
-export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight, effect = null, attribute = null, type = 'テスト', cardCategory = 'unit' }) {
+export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotIndex = null, x, y, attackLeft, attackRight, effect = null, attribute = null, type = 'テスト', cardCategory = 'unit', effects = [], keywords = [], directAttack = 1 }) {
   return {
     id,
     owner,
@@ -28,6 +28,8 @@ export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotI
     attribute,    // 属性: null=無 / 'red'/'blue'/'green'/'black'/'white'
     type,         // 種族: 'テスト' など
     cardCategory, // 'unit' | 'spell'
+    effects,      // 召喚時効果リスト [{type, ...params}]
+    keywords,     // キーワード能力リスト ['sutoemi', ...]
     handIndex,
     fieldSlotIndex,
     x,
@@ -41,6 +43,7 @@ export function createCard({ id, owner, zone, rank, handIndex = null, fieldSlotI
       summonedThisTurn: false,
       tempAttackLeftReduction: 0,
       tempAttackRightReduction: 0,
+      directAttack, // DA値（直接攻撃ダメージ）
     },
     ui: {
       isDragging: false,
@@ -104,42 +107,31 @@ export function drawRandomCardToHand(owner) {
   const handIndex = handCards.length;
   const center = getHandCenter(owner, handIndex, handIndex + 1);
 
-  let rank;
-  let effect;
-  let cardCategory = 'unit';
+  const pile = owner === 'player' ? gameState.playerDeckPile : gameState.enemyDeckPile;
+  if (pile.length === 0) return;
+  const drawn = pile.pop();
 
-  if (owner === 'player') {
-    if (gameState.playerDeckPile.length === 0) return;
-    const drawn = gameState.playerDeckPile.pop();
-    rank = drawn.rank;
-    effect = drawn.effect;
-    cardCategory = drawn.cardCategory ?? 'unit';
-  } else {
-    if (gameState.enemyDeckPile.length === 0) return;
-    const drawn = gameState.enemyDeckPile.pop();
-    rank = drawn.rank;
-    effect = drawn.effect;
-    cardCategory = drawn.cardCategory ?? 'unit';
-  }
-
-  // スペルは攻撃値なし
-  const stats = cardCategory === 'spell' ? { l: 0, r: 0 } : getCardStats(rank, effect);
-  const pair = { left: stats.l, right: stats.r };
+  // typeId ベースのデッキパイル
+  const typeEntry = getCardType(drawn.typeId);
+  if (!typeEntry) return;
 
   const card = createCard({
     id: gameState.nextCardId,
     owner,
     zone: 'hand',
-    rank,
+    rank: typeEntry.rank,
     handIndex,
     x: center.x,
     y: center.y,
-    attackLeft: pair.left,
-    attackRight: pair.right,
-    effect,
-    cardCategory,
-    attribute: null,
-    type: 'テスト',
+    attackLeft: typeEntry.la,
+    attackRight: typeEntry.ra,
+    effect: null,
+    cardCategory: typeEntry.cardCategory ?? 'unit',
+    attribute: typeEntry.attribute ?? null,
+    type: typeEntry.type ?? 'テスト',
+    effects: typeEntry.effects ?? [],
+    keywords: typeEntry.keywords ?? [],
+    directAttack: typeEntry.directAttack ?? 1,
   });
   gameState.nextCardId += 1;
   gameState.cards.push(card);
@@ -356,6 +348,7 @@ export function performSummon(card, targetSlot, tributeIds) {
     gameState.summonSelection.preselectedIds = [];
     gameState.summonSelection.selectedIds = [];
     applyBoardEffects();
+    checkStateBased();
 
     // swap効果
     if (card.effect === 'swap') {
@@ -377,6 +370,12 @@ export function performSummon(card, targetSlot, tributeIds) {
     if (card.effect === 'harakiri') {
       performHarakiriEffect(card, matchIdAtStart);
       return;
+    }
+
+    // effects 配列による新効果ディスパッチ
+    if (card.effects && card.effects.length > 0) {
+      dispatchSummonEffects(card, card.owner, matchIdAtStart);
+      return; // interactionLock 解除は dispatcher 内で行う
     }
 
     gameState.interactionLock = false;
@@ -474,6 +473,7 @@ export function performOverrideSummon(card, targetSlot) {
       targetSlot.occupiedByCardId = card.id;
       reflowHand(card.owner);
       applyBoardEffects();
+      checkStateBased();
 
       if (card.effect === 'swap') {
         performSwapEffect(card);
@@ -490,6 +490,11 @@ export function performOverrideSummon(card, targetSlot) {
       }
       if (card.effect === 'harakiri') {
         performHarakiriEffect(card, matchIdAtStart);
+        return;
+      }
+
+      if (card.effects && card.effects.length > 0) {
+        dispatchSummonEffects(card, card.owner, matchIdAtStart);
         return;
       }
 
@@ -676,6 +681,14 @@ export function resolveSwipeAttack(attacker, direction) {
       if (gameState.matchId !== matchIdAtStart) {
         return;
       }
+
+      // 捨身キーワード: 戦闘後、生存しているカードでも自壊
+      [attacker, defender].forEach((c) => {
+        if (c && c.keywords && c.keywords.includes('sutoemi') && !c.ui.pendingRemoval) {
+          markCardDestroyed(c, performance.now());
+        }
+      });
+
       let gameEnded = false;
       effectDamageList.forEach(({ targetOwner, amount }) => {
         if (gameEnded) return;
@@ -693,6 +706,7 @@ export function resolveSwipeAttack(attacker, direction) {
       }
       recomputeSlotOccupancy();
       applyBoardEffects();
+      checkStateBased();
     }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
 }
@@ -714,6 +728,7 @@ export function confirmOfferingChoice(giveToOpponent) {
   if (card && giveToOpponent) {
     card.owner = card.owner === 'player' ? 'enemy' : 'player';
     applyBoardEffects();
+    checkStateBased();
   }
   gameState.interactionLock = false;
 }
@@ -752,6 +767,7 @@ function performStealEffect(card) {
   }
 
   applyBoardEffects();
+  checkStateBased();
   gameState.interactionLock = false;
 }
 
@@ -773,6 +789,7 @@ export function confirmStealChoice(targetCardId) {
   if (target && stealCardObj) {
     stealCard(target, stealCardObj.owner);
     applyBoardEffects();
+    checkStateBased();
   }
   gameState.interactionLock = false;
 }
@@ -796,6 +813,7 @@ function performHarakiriEffect(card, matchIdAtStart) {
     if (gameState.matchId !== matchIdAtStart) return;
     recomputeSlotOccupancy();
     applyBoardEffects();
+    checkStateBased();
     gameState.interactionLock = false;
   }, DESTROY_ANIMATION_MS + 60);
 }
@@ -819,7 +837,12 @@ export function replaceLeftmostHandCard(owner, rank, effect, attackLeft, attackR
 
 export function canActivateSpell(card, owner) {
   if (card.cardCategory !== 'spell') return false;
-  return getGraveyardRankTotal(owner) >= card.rank;
+  if (getManaTotal(owner) < card.rank) return false;
+  // 敵を対象とするスペルは敵フィールドにカードが必要
+  const opponent = owner === 'player' ? 'enemy' : 'player';
+  if ((card.effect === 'singleHit10' || card.effect === 'aoeHit33')
+      && getFieldCards(opponent).length === 0) return false;
+  return true;
 }
 
 export function activateSpellEffect(card, owner) {
@@ -894,20 +917,16 @@ export function activateSpellEffect(card, owner) {
 // ===== 特殊攻撃 =====
 
 // targets: 攻撃対象カードの配列。deltaLeft/deltaRight: LA/RAから減算する値（>= 0）
-// 位置・隣接無関係、反撃なし。0以下になったカードは破壊。
+// 位置・隣接無関係、反撃なし。ターン内限定の一時ダメージとして処理、0以下で状況起因処理。
 function performSpecialAttack(targets, deltaLeft, deltaRight, matchIdAtStart) {
   if (targets.length === 0) return;
   const nowMs = performance.now();
-  const toDestroy = [];
 
   targets.forEach((target) => {
     target.ui.hitFlashUntilMs = nowMs + HIT_FLASH_MS;
-    // baseAttack を直接減算（恒久的な攻撃力ダウン）
-    target.combat.baseAttackLeft  = Math.max(0, target.combat.baseAttackLeft  - deltaLeft);
-    target.combat.baseAttackRight = Math.max(0, target.combat.baseAttackRight - deltaRight);
-    if (target.combat.baseAttackLeft <= 0 || target.combat.baseAttackRight <= 0) {
-      toDestroy.push(target);
-    }
+    // 一時攻撃力減算（ターン中のみ）
+    target.combat.tempAttackLeftReduction  += deltaLeft;
+    target.combat.tempAttackRightReduction += deltaRight;
   });
 
   addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20, `SPELL -${deltaLeft}/${deltaRight}`, '#c080ff');
@@ -915,8 +934,8 @@ function performSpecialAttack(targets, deltaLeft, deltaRight, matchIdAtStart) {
 
   setTimeout(() => {
     if (gameState.matchId !== matchIdAtStart) return;
-    const removeAt = performance.now();
-    toDestroy.forEach((c) => markCardDestroyed(c, removeAt));
+    applyBoardEffects();
+    checkStateBased();
     setTimeout(() => {
       if (gameState.matchId !== matchIdAtStart) return;
       recomputeSlotOccupancy();
@@ -924,6 +943,181 @@ function performSpecialAttack(targets, deltaLeft, deltaRight, matchIdAtStart) {
       gameState.interactionLock = false;
     }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
+}
+
+// ===== 状況起因処理 =====
+
+// LA または RA が 0 以下のフィールドカードを即破壊する
+export function checkStateBased() {
+  const nowMs = performance.now();
+  let any = false;
+  gameState.cards
+    .filter((c) => c.zone === 'field' && !c.ui.pendingRemoval
+                && (c.combat.attackLeft <= 0 || c.combat.attackRight <= 0))
+    .forEach((c) => { markCardDestroyed(c, nowMs); any = true; });
+  if (any) recomputeSlotOccupancy();
+}
+
+// ===== 召喚時効果ディスパッチャ =====
+
+function dispatchSummonEffects(card, owner, matchIdAtStart) {
+  const effects = card.effects;
+  if (!effects || effects.length === 0) {
+    gameState.interactionLock = false;
+    return;
+  }
+
+  // 効果を順次処理（非同期効果は最後に interactionLock 解除）
+  let idx = 0;
+
+  function processNext() {
+    if (gameState.matchId !== matchIdAtStart) return;
+    if (idx >= effects.length) {
+      applyBoardEffects();
+      checkStateBased();
+      gameState.interactionLock = false;
+      return;
+    }
+    const eff = effects[idx];
+    idx += 1;
+
+    switch (eff.type) {
+      case 'adjEnemy': {
+        // 隣接する敵1体に eff.l / eff.r のダメージ
+        const slotIdx = card.fieldSlotIndex;
+        if (slotIdx === null) { processNext(); return; }
+        const opponent = owner === 'player' ? 'enemy' : 'player';
+        const candidates = [];
+        [-1, 1].forEach((d) => {
+          const c = getCardAtSlot(slotIdx + d);
+          if (c && c.owner === opponent) candidates.push(c);
+        });
+        if (candidates.length === 0) { processNext(); return; }
+        performSpecialAttack(candidates, eff.l, eff.r, matchIdAtStart);
+        // performSpecialAttack は非同期。残りの効果は独立して処理するため次へ
+        processNext();
+        return;
+      }
+      case 'anyEnemy': {
+        // 敵フィールドの LA 最小の1体に eff.l / eff.r のダメージ
+        const opponent = owner === 'player' ? 'enemy' : 'player';
+        const enemies = getFieldCards(opponent);
+        if (enemies.length === 0) { processNext(); return; }
+        const target = enemies.slice().sort((a, b) => a.combat.attackLeft - b.combat.attackLeft)[0];
+        performSpecialAttack([target], eff.l, eff.r, matchIdAtStart);
+        processNext();
+        return;
+      }
+      case 'aoeExSelf': {
+        // 自身以外の全フィールドカードに eff.l / eff.r のダメージ
+        const targets = gameState.cards.filter(
+          (c) => c.zone === 'field' && !c.ui.pendingRemoval && c.id !== card.id,
+        );
+        if (targets.length === 0) { processNext(); return; }
+        performSpecialAttack(targets, eff.l, eff.r, matchIdAtStart);
+        processNext();
+        return;
+      }
+      case 'adjAll': {
+        // 両隣のカード（オーナー問わず）に eff.l / eff.r のダメージ
+        const slotIdx = card.fieldSlotIndex;
+        if (slotIdx === null) { processNext(); return; }
+        const targets = [];
+        [-1, 1].forEach((d) => {
+          const c = getCardAtSlot(slotIdx + d);
+          if (c) targets.push(c);
+        });
+        if (targets.length === 0) { processNext(); return; }
+        performSpecialAttack(targets, eff.l, eff.r, matchIdAtStart);
+        processNext();
+        return;
+      }
+      case 'manaGate': {
+        // マナが cost 以上なら inner 効果を発動してマナを消費
+        if (getManaTotal(owner) >= eff.cost) {
+          useMana(owner, eff.cost, card.attribute ?? null);
+          // inner を一時的に effects に差し込んで処理
+          const innerEffect = eff.inner;
+          effects.splice(idx, 0, innerEffect);
+        }
+        processNext();
+        return;
+      }
+      case 'playerDamage': {
+        // 相手プレイヤーに amount ダメージ
+        const targetOwner = owner === 'player' ? 'enemy' : 'player';
+        addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20, `-${eff.amount}`, '#ff6767');
+        triggerScreenShake(6, 180);
+        const hpPos = getHpBadgePosition(targetOwner);
+        gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - eff.amount);
+        triggerHpPulse(targetOwner, 560);
+        addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
+        if (gameState.hp[targetOwner] <= 0) {
+          finishGame(owner);
+          return;
+        }
+        processNext();
+        return;
+      }
+      case 'boostSelf': {
+        // 自身の baseAttack を永続強化
+        card.combat.baseAttackLeft  += eff.l;
+        card.combat.baseAttackRight += eff.r;
+        addDamageText(card.x, card.y - 60, `+${eff.l}/+${eff.r}`, '#88ffaa');
+        applyBoardEffects();
+        checkStateBased();
+        processNext();
+        return;
+      }
+      case 'handReset': {
+        // 自分の手札を全破棄してから draw 枚ドロー
+        const nowMs = performance.now();
+        getHandCards(owner).forEach((c) => markCardDestroyed(c, nowMs));
+        setTimeout(() => {
+          if (gameState.matchId !== matchIdAtStart) return;
+          for (let i = 0; i < eff.draw; i += 1) {
+            drawRandomCardToHand(owner);
+          }
+          reflowHand(owner);
+          processNext();
+        }, DESTROY_ANIMATION_MS + 30);
+        return;
+      }
+      case 'colorScale': {
+        // X = owner の color マナ量。X=0 → 自壊。else LA/RA = X、DA = daScale で計算
+        const colorMana = gameState.mana[owner][eff.color] ?? 0;
+        if (colorMana === 0) {
+          const nowMs = performance.now();
+          markCardDestroyed(card, nowMs);
+          recomputeSlotOccupancy();
+          applyBoardEffects();
+          checkStateBased();
+          gameState.interactionLock = false;
+          return;
+        }
+        card.combat.baseAttackLeft  = colorMana;
+        card.combat.baseAttackRight = colorMana;
+        // DA スケール計算
+        let da = 1;
+        if (eff.daScale) {
+          for (const step of eff.daScale) {
+            if (colorMana >= step.min) da = step.da;
+          }
+        }
+        card.combat.directAttack = da;
+        addDamageText(card.x, card.y - 60, `X=${colorMana}`, '#ffcc44');
+        applyBoardEffects();
+        checkStateBased();
+        processNext();
+        return;
+      }
+      default:
+        processNext();
+        return;
+    }
+  }
+
+  processNext();
 }
 
 export function finishGame(winner) {
@@ -955,9 +1149,10 @@ export function resolveDirectAttack(attacker) {
   const targetOwner = attacker.owner === 'player' ? 'enemy' : 'player';
   // strike2/strike3: 直接攻撃ダメージを増加
   // doubleblade: 通常ダメージ、ただし自分にも同量ダメージ
+  // directAttack フィールド: 新カード用 DA 値
   const directDamage = attacker.effect === 'strike3' ? 3
     : attacker.effect === 'strike2' ? 2
-    : 1;
+    : (attacker.combat.directAttack ?? 1);
   const selfDamage = attacker.effect === 'doubleblade' ? directDamage : 0;
 
   attacker.combat.hasActedThisTurn = true;
@@ -981,6 +1176,15 @@ export function resolveDirectAttack(attacker) {
       addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
       if (gameState.hp[targetOwner] <= 0) {
         finishGame(attacker.owner);
+        return;
+      }
+      // 捨身キーワード: 直接攻撃後に自壊
+      if (attacker.keywords && attacker.keywords.includes('sutoemi') && !attacker.ui.pendingRemoval) {
+        markCardDestroyed(attacker, performance.now());
+        recomputeSlotOccupancy();
+        applyBoardEffects();
+        checkStateBased();
+        gameState.interactionLock = false;
         return;
       }
       // doubleblade: 自分にも同量のダメージ
@@ -1163,6 +1367,7 @@ function performDoubleCenterAttack(card, matchIdAtStart) {
       }
       recomputeSlotOccupancy();
       applyBoardEffects();
+      checkStateBased();
     }, DESTROY_ANIMATION_MS);
   }, HIT_FLASH_MS);
 }

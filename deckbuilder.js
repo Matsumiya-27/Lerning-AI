@@ -3,74 +3,65 @@ import {
   CARD_TYPES, DECK_SIZE, MAX_COPIES,
   deckState, buildSampleDeck,
   getCardTypeCount, addCardToDeck, removeCardFromDeck,
-  getCardStats,
 } from './deck.js';
 
-// ── 表示用定数（render.js と統一） ──
-const EFFECT_JP = {
-  rush:         '調整中',
-  pierce:       '超過ダメージ',
-  revenge:      '撃破時に反撃',
-  strike2:      '2回連続攻撃',
-  strike3:      '3回連続攻撃',
-  edge1:        '端への攻撃+1',
-  edge2:        '端への攻撃+2',
-  edgewin:      '端への攻撃必勝',
-  swap:         '隣を入れ替え',
-  doublecenter: '両隣を同時攻撃',
-  doubleblade:  '諸刃の剣',
-  weakaura:     '隣の敵を弱体化',
-  offering:     '相手に贈与可',
-  steal:        '隣の敵を奪取',
-  deathcurse:   '破壊時に呪い',
-  harakiri:     '全カード破壊',
-  draw1:        'カードを1枚引く',
-  singleHit10:  '敵1体に1/0',
-  aoeHit33:     '敵全体に3/3',
-  fieldHit1010: '場全体に10/10',
+// ── 属性カラーマップ（render.js と統一） ──
+const ATTR_COLOR = {
+  red:   '#c82020',
+  blue:  '#2060c8',
+  green: '#20a040',
+  black: '#5a5a5a',
+  white: '#c0b870',
+  null:  '#5a6080',
+};
+const ATTR_BORDER = {
+  red:   '#7a1010',
+  blue:  '#103880',
+  green: '#105020',
+  black: '#181818',
+  white: '#706840',
+  null:  '#323650',
+};
+const ATTR_JP = {
+  red: '赤', blue: '青', green: '緑', black: '黒', white: '白', null: '無',
 };
 
-const EFFECT_COLOR = {
-  rush:         '#666666',
-  pierce:       '#c8a000',
-  revenge:      '#9040d0',
-  strike2:      '#e05020',
-  strike3:      '#ff2800',
-  edge1:        '#1a80d0',
-  edge2:        '#0050ff',
-  edgewin:      '#00b8e0',
-  swap:         '#c07800',
-  doublecenter: '#b000b0',
-  doubleblade:  '#c04000',
-  weakaura:     '#20a080',
-  offering:     '#8060e0',
-  steal:        '#e0a000',
-  deathcurse:   '#702090',
-  harakiri:     '#cc0000',
-  draw1:        '#8060e0',
-  singleHit10:  '#c060d0',
-  aoeHit33:     '#a040c0',
-  fieldHit1010: '#802090',
-};
-
-const RANK_BG     = { 1: '#1a2e4a', 2: '#1a3a38', 3: '#2e1a50' };
-const RANK_BORDER = { 1: '#2a5090', 2: '#1a6060', 3: '#5020a0' };
-
-// ── 固定スタッツ表示文字列 ──
-function getDisplayStats(rank, effect) {
-  const s = getCardStats(rank, effect);
-  return `${s.l} / ${s.r}`;
+// ── 効果テキスト自動生成 ──
+function effectDisplayText(eff) {
+  if (!eff) return '';
+  switch (eff.type) {
+    case 'adjEnemy':     return `隣接する敵1体に${eff.l}/${eff.r}`;
+    case 'anyEnemy':     return `敵1体に${eff.l}/${eff.r}`;
+    case 'aoeExSelf':    return `全体に${eff.l}/${eff.r}（自己除く）`;
+    case 'adjAll':       return `両隣に${eff.l}/${eff.r}`;
+    case 'manaGate':     return `[${eff.cost}マナ]${effectDisplayText(eff.inner)}`;
+    case 'playerDamage': return `相手に${eff.amount}ダメージ`;
+    case 'boostSelf':    return `自身+${eff.l}/+${eff.r}`;
+    case 'handReset':    return `手札捨て+${eff.draw}ドロー`;
+    case 'colorScale':   return `X/X(${ATTR_JP[eff.color] ?? eff.color}マナ=X)`;
+    default: return eff.type;
+  }
 }
 
-function getTotalLabel(rank, effect) {
-  const s = getCardStats(rank, effect);
-  return String(s.l + s.r);
+const KW_JP    = { sutoemi: '捨身' };
+const KW_COLOR = { sutoemi: '#cc0000' };
+
+// ── 固定スタッツ表示文字列（la/ra 直参照） ──
+function getDisplayStats(cardType) {
+  return `${cardType.la} / ${cardType.ra}`;
+}
+
+function getTotalLabel(cardType) {
+  return String(cardType.la + cardType.ra);
 }
 
 // ── カード要素の生成 ──
 // onAdd: 左クリック・左スワイプ時、onRemove: 右クリック・右スワイプ時
-function createCardEl(rank, effect, onAdd, onRemove, cardCategory = 'unit') {
+function createCardEl(cardType, onAdd, onRemove) {
+  const { rank, attribute, la, ra, effects = [], keywords = [], cardCategory } = cardType;
   const isSpell = cardCategory === 'spell';
+  const attrKey = attribute ?? 'null';
+
   const div = document.createElement('div');
   div.className = 'db-card';
 
@@ -78,8 +69,16 @@ function createCardEl(rank, effect, onAdd, onRemove, cardCategory = 'unit') {
     div.style.background = '#1e1040';
     div.style.border = '2px solid #5030a0';
   } else {
-    div.style.background = RANK_BG[rank];
-    div.style.border = `2px solid ${RANK_BORDER[rank]}`;
+    // 属性の暗色枠 + 薄属性オーバーレイ
+    const base = '#1a2030';
+    div.style.background = base;
+    div.style.border = `2px solid ${ATTR_BORDER[attrKey] ?? ATTR_BORDER.null}`;
+    div.style.position = 'relative';
+    div.style.overflow = 'hidden';
+    // 属性色オーバーレイを ::before 風に疑似実装（inline style で）
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;background:${ATTR_COLOR[attrKey] ?? ATTR_COLOR.null};opacity:0.14;pointer-events:none;`;
+    div.appendChild(overlay);
   }
 
   const rankLabel = document.createElement('div');
@@ -89,14 +88,18 @@ function createCardEl(rank, effect, onAdd, onRemove, cardCategory = 'unit') {
     rankLabel.style.color = '#a080ff';
   } else {
     rankLabel.textContent = `RANK ${rank}`;
+    rankLabel.style.color = ATTR_COLOR[attrKey] ?? '#8aafdd';
   }
   div.appendChild(rankLabel);
 
   const effectLabel = document.createElement('div');
   effectLabel.className = 'db-card-effect';
-  if (effect) {
-    effectLabel.textContent = EFFECT_JP[effect] || effect;
-    effectLabel.style.color = EFFECT_COLOR[effect] || '#aaa';
+  if (effects.length > 0) {
+    effectLabel.textContent = effectDisplayText(effects[0]);
+    effectLabel.style.color = ATTR_COLOR[attrKey] ?? '#aaa';
+  } else if (keywords.length > 0) {
+    effectLabel.textContent = keywords.map((k) => KW_JP[k] ?? k).join(' ');
+    effectLabel.style.color = KW_COLOR[keywords[0]] ?? '#cc4444';
   } else {
     effectLabel.textContent = '─';
     effectLabel.style.color = '#5a7aaa';
@@ -104,7 +107,6 @@ function createCardEl(rank, effect, onAdd, onRemove, cardCategory = 'unit') {
   div.appendChild(effectLabel);
 
   if (isSpell) {
-    // スペルは発動条件のRankと「LA/RA なし」を表示
     const condDiv = document.createElement('div');
     condDiv.className = 'db-card-stats';
     condDiv.textContent = `発動:${rank}`;
@@ -113,12 +115,12 @@ function createCardEl(rank, effect, onAdd, onRemove, cardCategory = 'unit') {
   } else {
     const statsDiv = document.createElement('div');
     statsDiv.className = 'db-card-stats';
-    statsDiv.textContent = getDisplayStats(rank, effect);
+    statsDiv.textContent = getDisplayStats(cardType);
     div.appendChild(statsDiv);
 
     const totalDiv = document.createElement('div');
     totalDiv.className = 'db-card-total';
-    totalDiv.textContent = `合計 ${getTotalLabel(rank, effect)}`;
+    totalDiv.textContent = `合計 ${getTotalLabel(cardType)}`;
     div.appendChild(totalDiv);
   }
 
@@ -138,22 +140,19 @@ function createCardEl(rank, effect, onAdd, onRemove, cardCategory = 'unit') {
     if (swipeStartX === null) return;
     const dx = e.clientX - swipeStartX;
     const dy = e.clientY - swipeStartY;
-    // 水平方向30px以上、かつ水平成分が垂直成分より大きい場合はスワイプと判定
     if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
       swipeHandled = true;
-      if (dx < 0 && onAdd) onAdd();        // 左スワイプ＝追加
-      else if (dx > 0 && onRemove) onRemove(); // 右スワイプ＝削除
+      if (dx < 0 && onAdd) onAdd();
+      else if (dx > 0 && onRemove) onRemove();
     }
     swipeStartX = null;
   });
 
-  // 左クリック＝追加
   div.addEventListener('click', () => {
     if (swipeHandled) { swipeHandled = false; return; }
     if (onAdd) onAdd();
   });
 
-  // 右クリック＝削除
   div.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     if (onRemove) onRemove();
@@ -173,30 +172,44 @@ function renderDeckPanel() {
   grid.innerHTML = '';
 
   const count = deckState.cards.length;
-  const r1 = deckState.cards.filter((c) => c.rank === 1).length;
-  const r2 = deckState.cards.filter((c) => c.rank === 2).length;
-  const r3 = deckState.cards.filter((c) => c.rank === 3).length;
+  const r1 = deckState.cards.filter((c) => {
+    const t = CARD_TYPES.find((ct) => ct.id === c.typeId);
+    return t && t.rank === 1;
+  }).length;
+  const r2 = deckState.cards.filter((c) => {
+    const t = CARD_TYPES.find((ct) => ct.id === c.typeId);
+    return t && t.rank === 2;
+  }).length;
+  const r3 = deckState.cards.filter((c) => {
+    const t = CARD_TYPES.find((ct) => ct.id === c.typeId);
+    return t && t.rank === 3;
+  }).length;
   header.innerHTML = `デッキ（${count} / ${DECK_SIZE}）<br><span class="db-rank-counts">R1: ${r1}枚　R2: ${r2}枚　R3: ${r3}枚</span>`;
   header.style.color = count === DECK_SIZE ? '#6de38c' : '#ffd24a';
 
-  // ランク → effect の文字列順でソート
+  // ランク → id 順でソート
   const sorted = [...deckState.cards].sort((a, b) => {
-    if (a.rank !== b.rank) return a.rank - b.rank;
-    return (a.effect ?? '') < (b.effect ?? '') ? -1 : 1;
+    const ta = CARD_TYPES.find((ct) => ct.id === a.typeId);
+    const tb = CARD_TYPES.find((ct) => ct.id === b.typeId);
+    if (!ta || !tb) return 0;
+    if (ta.rank !== tb.rank) return ta.rank - tb.rank;
+    return ta.id - tb.id;
   });
 
-  sorted.forEach(({ rank, effect, cardCategory }) => {
+  sorted.forEach(({ typeId }) => {
+    const cardType = CARD_TYPES.find((ct) => ct.id === typeId);
+    if (!cardType) return;
     const onAdd = () => {
-      if (getCardTypeCount(rank, effect) < MAX_COPIES && deckState.cards.length < DECK_SIZE) {
-        addCardToDeck(rank, effect);
+      if (getCardTypeCount(typeId) < MAX_COPIES && deckState.cards.length < DECK_SIZE) {
+        addCardToDeck(typeId);
         refresh();
       }
     };
     const onRemove = () => {
-      removeCardFromDeck(rank, effect);
+      removeCardFromDeck(typeId);
       refresh();
     };
-    const el = createCardEl(rank, effect, onAdd, onRemove, cardCategory ?? 'unit');
+    const el = createCardEl(cardType, onAdd, onRemove);
     el.title = '左クリック/左スワイプ：追加　右クリック/右スワイプ：削除';
     grid.appendChild(el);
   });
@@ -207,24 +220,27 @@ function renderCollectionPanel() {
   if (!grid) return;
   grid.innerHTML = '';
 
-  // ソート順に応じてカードタイプ一覧を並び替え
+  // ソート順: ユニット先（スペルを後ろに）、同カテゴリ内は Rank 昇/降、同 Rank は id 順
   const types = [...CARD_TYPES].sort((a, b) => {
-    const rankDiff = sortOrder === 'asc' ? a.rank - b.rank : b.rank - a.rank;
-    if (rankDiff !== 0) return rankDiff;
-    return (a.effect ?? '') < (b.effect ?? '') ? -1 : 1;
+    const aSpell = a.cardCategory === 'spell';
+    const bSpell = b.cardCategory === 'spell';
+    if (aSpell !== bSpell) return aSpell ? 1 : -1;
+    const rd = sortOrder === 'asc' ? a.rank - b.rank : b.rank - a.rank;
+    return rd !== 0 ? rd : a.id - b.id;
   });
 
-  types.forEach(({ rank, effect, cardCategory }) => {
-    const copiesInDeck = getCardTypeCount(rank, effect);
+  types.forEach((cardType) => {
+    const { id } = cardType;
+    const copiesInDeck = getCardTypeCount(id);
     const deckFull     = deckState.cards.length >= DECK_SIZE;
     const maxReached   = copiesInDeck >= MAX_COPIES;
     const canAdd       = !deckFull && !maxReached;
     const canRemove    = copiesInDeck > 0;
 
-    const onAdd    = canAdd    ? () => { addCardToDeck(rank, effect);    refresh(); } : null;
-    const onRemove = canRemove ? () => { removeCardFromDeck(rank, effect); refresh(); } : null;
+    const onAdd    = canAdd    ? () => { addCardToDeck(id);    refresh(); } : null;
+    const onRemove = canRemove ? () => { removeCardFromDeck(id); refresh(); } : null;
 
-    const el = createCardEl(rank, effect, onAdd, onRemove, cardCategory ?? 'unit');
+    const el = createCardEl(cardType, onAdd, onRemove);
 
     // コピー数バッジ（右下）
     const badge = document.createElement('div');
@@ -234,7 +250,6 @@ function renderCollectionPanel() {
     badge.style.borderColor = copiesInDeck >= MAX_COPIES ? '#e0a000' : '#3a5a90';
     el.appendChild(badge);
 
-    // 追加も削除もできない場合は薄く表示
     if (!canAdd && !canRemove) {
       el.style.opacity = '0.35';
       el.style.cursor  = 'default';

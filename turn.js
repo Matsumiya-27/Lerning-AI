@@ -14,7 +14,7 @@ import {
 import {
   drawRandomCardToHand, buildInitialCards,
   isPlayerMainTurn, canOwnerAct, finishGame,
-  applyBoardEffects,
+  applyBoardEffects, checkStateBased,
 } from './cards.js';
 import { executeEnemyMainAction, aiShouldDiscardHand } from './ai.js';
 import { shuffleDeck, buildSampleDeck } from './deck.js';
@@ -52,6 +52,7 @@ export function clearActedFlags(owner) {
     c.combat.tempAttackRightReduction = 0;
   });
   applyBoardEffects();
+  checkStateBased();
 
   getFieldCards(owner).forEach((card) => {
     card.combat.hasActedThisTurn = false;
@@ -195,8 +196,8 @@ export function resetGame() {
   gameState.matchId += 1;
   // プレイヤーのデッキ山を再構築（シャッフルして積み直す）
   gameState.playerDeckPile = shuffleDeck();
-  // 敵のデッキ山はスペルなしのサンプルデッキをシャッフルして使用
-  const enemyDeck = buildSampleDeck(false);
+  // 敵のデッキ山はサンプルデッキをシャッフルして使用
+  const enemyDeck = buildSampleDeck();
   for (let i = enemyDeck.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
     const tmp = enemyDeck[i]; enemyDeck[i] = enemyDeck[j]; enemyDeck[j] = tmp;
@@ -213,6 +214,10 @@ export function resetGame() {
   gameState.discardPrompt.active = false;
   gameState.discardPrompt.owner = null;
   gameState.graveyard = { player: [], enemy: [] };
+  gameState.mana = {
+    player: { red: 0, blue: 0, green: 0, black: 0, white: 0, none: 0 },
+    enemy:  { red: 0, blue: 0, green: 0, black: 0, white: 0, none: 0 },
+  };
   gameState.result.winner = null;
   gameState.hp.player = STARTING_HP;
   gameState.hp.enemy = STARTING_HP;
