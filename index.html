@@ -336,6 +336,85 @@
           text-align: center;
         }
       }
+
+      /* ===== レスポンシブ（デッキ編集画面） ===== */
+
+      /* タブレット横向き〜中型画面：コレクションパネルを3列に絞る */
+      @media (max-width: 840px) {
+        #db-collection-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+
+      /* スマートフォン・タブレット縦向き：縦並びレイアウト */
+      @media (max-width: 640px) {
+        #screen-edit.active {
+          padding: 0;
+          place-items: start;
+        }
+
+        .db-container {
+          width: 100vw;
+          aspect-ratio: unset;
+          height: 100vh;
+          height: 100dvh;
+          border-radius: 0;
+          border-left: none;
+          border-right: none;
+        }
+
+        /* 左右並びを上下並びに変更 */
+        .db-main {
+          flex-direction: column;
+        }
+
+        /* デッキパネル：画面上部 38% に固定してスクロール */
+        .db-deck-panel {
+          width: 100%;
+          height: 38%;
+          max-height: 38%;
+          border-right: none;
+          border-bottom: 1px solid #3c4863;
+        }
+
+        /* コレクションパネル：残りの領域を占有 */
+        .db-collection-panel {
+          flex: 1;
+          min-height: 0;
+        }
+
+        /* デッキグリッド：3列・低め固定行 */
+        #db-deck-grid {
+          grid-template-columns: repeat(3, 1fr);
+          grid-auto-rows: 86px;
+          gap: 4px;
+        }
+
+        /* コレクショングリッド：3列 */
+        #db-collection-grid {
+          grid-template-columns: repeat(3, 1fr);
+          grid-auto-rows: 82px;
+          gap: 4px;
+        }
+
+        /* 下部バー：高さ固定を解除・折り返し許容 */
+        .db-bar {
+          height: auto;
+          padding: 8px 12px;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        /* ヒントテキストは省略 */
+        .db-hint {
+          display: none;
+        }
+
+        /* カード効果テキストを少し小さく */
+        .db-card-effect {
+          font-size: 10px;
+        }
+      }
     </style>
   </head>
   <body>
