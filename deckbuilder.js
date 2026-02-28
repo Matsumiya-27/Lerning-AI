@@ -29,22 +29,48 @@ const ATTR_JP = {
 // ── 効果テキスト自動生成 ──
 function effectDisplayText(eff) {
   if (!eff) return '';
+  const color = eff.color ? `${ATTR_JP[eff.color] ?? eff.color}` : '';
+  const costLabel = eff.cost ? `[${eff.cost}${color}マナ]` : '';
   switch (eff.type) {
     case 'adjEnemy':     return `隣接する敵1体に${eff.l}/${eff.r}`;
     case 'anyEnemy':     return `敵1体に${eff.l}/${eff.r}`;
     case 'aoeExSelf':    return `全体に${eff.l}/${eff.r}（自己除く）`;
     case 'adjAll':       return `両隣に${eff.l}/${eff.r}`;
-    case 'manaGate':     return `[${eff.cost}マナ]${effectDisplayText(eff.inner)}`;
+    case 'manaGate':     return `${costLabel}${effectDisplayText(eff.inner)}`;
     case 'playerDamage': return `相手に${eff.amount}ダメージ`;
     case 'boostSelf':    return `自身+${eff.l}/+${eff.r}`;
     case 'handReset':    return `手札捨て+${eff.draw}ドロー`;
     case 'colorScale':   return `X/X(${ATTR_JP[eff.color] ?? eff.color}マナ=X)`;
+    case 'draw':         return `カードを${eff.count}枚引く`;
+    case 'cycle':        return '循環（カードを1枚引き、手札1枚をデッキの1番下に戻す）';
+    case 'recruit':      return `選出[${eff.tribe}]`;
+    case 'upgradeDa':    return `DA${eff.value}${eff.boostL ? `+${eff.boostL}/${eff.boostR}` : ''}`;
+    case 'nullifySelf':  return '自身の効果テキストを無効にする';
+    case 'enableAura':   return eff.aura === 'nullify_adj' ? '隣の効果を無効' : '自陣全効果を無効';
     default: return eff.type;
   }
 }
 
-const KW_JP    = { sutoemi: '捨身' };
-const KW_COLOR = { sutoemi: '#cc0000' };
+const KW_JP = {
+  sutemi:        '捨身',
+  shugo:         '守護',
+  no_tribute:    '生贄不可',
+  no_attack:     '攻撃不能',
+  dbl_tribute:   '2体分生贄',
+  double_attack: '両隣攻撃',
+  nullify_adj:   '[隣効果無効中]',
+  nullify_own:   '[自陣無効中]',
+};
+const KW_COLOR = {
+  sutemi:        '#cc0000',
+  shugo:         '#4080ff',
+  no_tribute:    '#808080',
+  no_attack:     '#888888',
+  dbl_tribute:   '#c0a000',
+  double_attack: '#b000b0',
+  nullify_adj:   '#20b0b0',
+  nullify_own:   '#20b0b0',
+};
 
 // ── 固定スタッツ表示文字列（la/ra 直参照） ──
 function getDisplayStats(cardType) {

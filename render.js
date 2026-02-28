@@ -40,19 +40,48 @@ const ATTR_JP = {
 // 効果テキスト自動生成
 function effectDisplayText(eff) {
   if (!eff) return '';
+  const color = eff.color ? `${ATTR_JP[eff.color] ?? eff.color}` : '';
+  const costLabel = eff.cost ? `[${eff.cost}${color}マナ]` : '';
   switch (eff.type) {
     case 'adjEnemy':     return `隣接する敵1体に${eff.l}/${eff.r}`;
     case 'anyEnemy':     return `敵1体に${eff.l}/${eff.r}`;
     case 'aoeExSelf':    return `全体に${eff.l}/${eff.r}（自己除く）`;
     case 'adjAll':       return `両隣に${eff.l}/${eff.r}`;
-    case 'manaGate':     return `[${eff.cost}マナ]${effectDisplayText(eff.inner)}`;
+    case 'manaGate':     return `${costLabel}${effectDisplayText(eff.inner)}`;
     case 'playerDamage': return `相手に${eff.amount}ダメージ`;
     case 'boostSelf':    return `自身+${eff.l}/+${eff.r}`;
     case 'handReset':    return `手札捨て+${eff.draw}ドロー`;
     case 'colorScale':   return `X/X(${ATTR_JP[eff.color] ?? eff.color}マナ=X)`;
+    case 'draw':         return `カードを${eff.count}枚引く`;
+    case 'cycle':        return '循環（カードを1枚引き、手札1枚をデッキの1番下に戻す）';
+    case 'recruit':      return `選出[${eff.tribe}]`;
+    case 'upgradeDa':    return `DA${eff.value}${eff.boostL ? `+${eff.boostL}/${eff.boostR}` : ''}`;
+    case 'nullifySelf':  return '自身の効果テキストを無効にする';
+    case 'enableAura':   return eff.aura === 'nullify_adj' ? '隣の効果を無効' : '自陣全効果を無効';
     default: return eff.type;
   }
 }
+
+const KW_JP = {
+  sutemi:        '捨身',
+  shugo:         '守護',
+  no_tribute:    '生贄不可',
+  no_attack:     '攻撃不能',
+  dbl_tribute:   '2体分生贄',
+  double_attack: '両隣攻撃',
+  nullify_adj:   '[隣効果無効中]',
+  nullify_own:   '[自陣無効中]',
+};
+const KW_COLOR = {
+  sutemi:        '#cc0000',
+  shugo:         '#4080ff',
+  no_tribute:    '#808080',
+  no_attack:     '#888888',
+  dbl_tribute:   '#c0a000',
+  double_attack: '#b000b0',
+  nullify_adj:   '#20b0b0',
+  nullify_own:   '#20b0b0',
+};
 
 function drawTable() {
   ctx.fillStyle = '#1d2f4f';
@@ -494,9 +523,22 @@ function drawCards(nowMs) {
         ctx.fillText(effectDisplayText(card.effects[0]), centerX, centerY + 38);
       }
       if (card.keywords && card.keywords.length > 0) {
-        ctx.fillStyle = '#cc4444';
-        ctx.fillText(card.keywords.join(' '), centerX, centerY + 50);
+        card.keywords.forEach((kw, ki) => {
+          ctx.fillStyle = KW_COLOR[kw] ?? '#cc4444';
+          ctx.fillText(KW_JP[kw] ?? kw, centerX, centerY + 50 + ki * 11);
+        });
       }
+
+      // フィールドカードが effectsNullified の場合、効果エリアに薄い灰色オーバーレイ
+      if (card.zone === 'field' && card.ui.effectsNullified) {
+        ctx.fillStyle = 'rgba(0,0,0,0.30)';
+        ctx.fillRect(left + 1, centerY + 28, width - 2, height / 2 - 30);
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = '9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('[効果無効]', centerX, centerY + 44);
+      }
+
       ctx.textAlign = 'left';
 
       // フィールドカードのみ: USED/READY ステータス
@@ -914,6 +956,30 @@ function drawDeckCounts() {
   ctx.restore();
 }
 
+function drawCycleSelectionOverlay() {
+  if (!gameState.cycleSelection) return;
+  // 暗転背景
+  ctx.fillStyle = 'rgba(0,0,0,0.50)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // プレイヤー手札カードをシアンでハイライト
+  const hand = gameState.cards.filter(
+    (c) => c.owner === 'player' && c.zone === 'hand' && !c.ui.pendingRemoval,
+  );
+  hand.forEach((c) => {
+    ctx.strokeStyle = '#44ffff';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(c.x - CARD_WIDTH / 2, c.y - CARD_HEIGHT / 2, CARD_WIDTH, CARD_HEIGHT);
+  });
+
+  // ガイドテキスト
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('デッキの1番下に戻すカードを選んでください', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10);
+  ctx.textAlign = 'left';
+}
+
 export function draw(nowMs) {
   let shakeX = 0;
   let shakeY = 0;
@@ -942,6 +1008,7 @@ export function draw(nowMs) {
   drawOfferingChoiceOverlay();
   drawStealChoiceOverlay();
   drawDiscardPrompt();
+  drawCycleSelectionOverlay();
 
   if (nowMs < gameState.fx.koFlashUntilMs) {
     const remain = gameState.fx.koFlashUntilMs - nowMs;

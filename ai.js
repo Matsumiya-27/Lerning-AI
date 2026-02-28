@@ -9,7 +9,7 @@ import {
   getSummonCandidateSlots, canDirectAttack,
   resolveSwipeAttack, resolveDirectAttack,
   isOverrideSummonAvailable, getOverrideSummonSlots, performOverrideSummon,
-  performSummon,
+  performSummon, hasAdjacentGuard,
 } from './cards.js';
 
 export function getEmptySlotIndices() {
@@ -100,7 +100,10 @@ export function chooseBestEnemySummon() {
 }
 
 export function chooseBestEnemyAttack() {
-  const attackers = getFieldCards('enemy').filter((card) => !card.combat.hasActedThisTurn);
+  const attackers = getFieldCards('enemy').filter(
+    (card) => !card.combat.hasActedThisTurn
+      && !(card.keywords?.includes('no_attack') && !card.ui.effectsNullified),
+  );
   let best = null;
 
   attackers.forEach((attacker) => {
@@ -141,7 +144,11 @@ export function chooseBestEnemyAttack() {
   }
 
   if (canDirectAttack('enemy')) {
-    const directAttacker = attackers.find((card) => !card.combat.summonedThisTurn);
+    const directAttacker = attackers.find(
+      (card) => !card.combat.summonedThisTurn
+        && !(card.keywords?.includes('no_attack') && !card.ui.effectsNullified)
+        && !hasAdjacentGuard(card),
+    );
     const directCandidate = directAttacker
       ? { attacker: directAttacker, direction: 'direct', score: 12 + (STARTING_HP - gameState.hp.player) }
       : null;

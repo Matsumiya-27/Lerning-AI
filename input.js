@@ -15,6 +15,7 @@ import {
   getOverrideSummonSlots, performOverrideSummon, isOverrideSummonAvailable,
   confirmOfferingChoice, confirmStealChoice,
   canActivateSpell, activateSpellEffect,
+  returnCardToDeckBottom,
 } from './cards.js';
 import { endCurrentTurn, confirmDiscardPrompt } from './turn.js';
 
@@ -67,6 +68,26 @@ export function onPointerDown(event) {
 
   event.preventDefault();
   const point = getCanvasPoint(event);
+
+  // 循環効果: 手札1枚を選んでデッキ底に返す
+  if (gameState.cycleSelection) {
+    const sel = gameState.cycleSelection;
+    if (gameState.matchId !== sel.matchId) {
+      gameState.cycleSelection = null;
+      return;
+    }
+    const hit = gameState.cards.find(
+      (c) => c.owner === 'player' && c.zone === 'hand' && !c.ui.pendingRemoval
+        && pointInCard(point.x, point.y, c),
+    );
+    if (hit) {
+      gameState.cycleSelection = null;
+      returnCardToDeckBottom(hit, 'player');
+      reflowHand('player');
+      sel.processNext();
+    }
+    return; // cycleSelection 中は他の操作を受け付けない
+  }
 
   // offering 選択オーバーレイ
   if (gameState.offeringChoice.active) {

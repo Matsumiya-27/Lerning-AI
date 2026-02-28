@@ -81,6 +81,8 @@ export const gameState = {
     active: false,
     owner: null, // 'player' | 'enemy'
   },
+  // 循環効果: プレイヤーが手札を1枚選んでデッキ底に戻す待機状態
+  cycleSelection: null, // null | { owner, processNext, matchId }
   fx: {
     screenShakeUntilMs: 0,
     screenShakePower: 0,
@@ -256,6 +258,22 @@ export function markCardDestroyed(card, nowMs) {
 // マナ合計を計算して返す（毎回計算・保持しない）
 export function getManaTotal(owner) {
   return Object.values(gameState.mana[owner]).reduce((s, v) => s + v, 0);
+}
+
+// カードをデッキ返却として除去する（墓地・マナ積算なし）
+export function markCardReturned(card, nowMs) {
+  card.ui.destroyStartMs = nowMs;
+  card.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
+  card.ui.pendingRemoval = true;
+  // 墓地・マナには追加しない
+  if (card.fieldSlotIndex !== null) {
+    const slot = slotCenters[card.fieldSlotIndex];
+    if (slot && slot.occupiedByCardId === card.id) {
+      slot.occupiedByCardId = null;
+    }
+  }
+  if (card.zone === 'hand') reflowHand(card.owner);
+  card.fieldSlotIndex = null;
 }
 
 // マナを消費する（同色優先、不足分は他色から補填）
