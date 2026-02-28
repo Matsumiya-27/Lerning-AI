@@ -147,7 +147,8 @@ export function chooseBestEnemyAttack() {
     const directAttacker = attackers.find(
       (card) => !card.combat.summonedThisTurn
         && !(card.keywords?.includes('no_attack') && !card.ui.effectsNullified)
-        && !hasAdjacentGuard(card),
+        && !hasAdjacentGuard(card)
+        && (card.ui.effectsNullified ? 1 : (card.combat.directAttack ?? 1)) > 0,
     );
     const directCandidate = directAttacker
       ? { attacker: directAttacker, direction: 'direct', score: 12 + (STARTING_HP - gameState.hp.player) }

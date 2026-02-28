@@ -583,7 +583,8 @@ export function canOwnerAct(owner) {
   const canDirect = canDirectAttack(owner) && getFieldCards(owner).some(
     (card) => !card.combat.hasActedThisTurn
       && !(card.keywords?.includes('no_attack') && !card.ui.effectsNullified)
-      && !hasAdjacentGuard(card),
+      && !hasAdjacentGuard(card)
+      && (card.ui.effectsNullified ? 1 : (card.combat.directAttack ?? 1)) > 0,
   );
   return canSummon || canAttack || canDirect;
 }
