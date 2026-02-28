@@ -85,6 +85,8 @@ export const gameState = {
   cycleSelection: null, // null | { owner, processNext, matchId }
   // 選択廃棄: プレイヤーが手札からn枚選んで捨てる待機状態
   handDiscardSelection: null, // null | { count, owner, processNext, matchId, selectedIds: [] }
+  // カード詳細オーバーレイ: 長押し中に表示するカード拡大表示
+  cardDetailOverlay: null, // null | { cardId }
   fx: {
     screenShakeUntilMs: 0,
     screenShakePower: 0,

@@ -29,13 +29,13 @@
         place-items: center;
       }
       .title-container {
-        width: min(960px, calc(100vw - 24px));
+        width: min(960px, calc(100vw - 24px), calc((100vh - 24px) * 4 / 3));
         aspect-ratio: 4 / 3;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 40px;
+        gap: clamp(20px, 4vw, 40px);
         border: 1px solid #3c4863;
         border-radius: 10px;
         background: #1d2f4f;
@@ -43,14 +43,16 @@
       }
       .title-heading {
         margin: 0;
-        font-size: 44px;
+        font-size: clamp(22px, 5.5vw, 44px);
         letter-spacing: 0.08em;
         color: #e7ecf7;
         text-shadow: 0 2px 32px rgba(77, 163, 255, 0.4);
       }
       .title-buttons {
         display: flex;
-        gap: 20px;
+        gap: clamp(10px, 2vw, 20px);
+        flex-wrap: wrap;
+        justify-content: center;
       }
       .title-btn {
         cursor: pointer;
@@ -58,8 +60,8 @@
         background: #192436;
         color: #e7ecf7;
         border-radius: 10px;
-        padding: 14px 52px;
-        font-size: 18px;
+        padding: clamp(8px, 1.5vw, 14px) clamp(20px, 12vw, 52px);
+        font-size: clamp(13px, 1.8vw, 18px);
         font-family: inherit;
       }
       .title-btn:hover {
@@ -82,8 +84,7 @@
         gap: 14px;
       }
       canvas {
-        width: min(960px, calc(100vw - 24px));
-        max-height: calc(100vh - 24px);
+        width: min(960px, calc(100vw - 24px), calc((100vh - 24px) * 4 / 3));
         height: auto;
         aspect-ratio: 4 / 3;
         touch-action: none;

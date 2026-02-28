@@ -215,6 +215,7 @@ export function resetGame() {
   gameState.discardPrompt.owner = null;
   gameState.cycleSelection = null;
   gameState.handDiscardSelection = null;
+  gameState.cardDetailOverlay = null;
   gameState.graveyard = { player: [], enemy: [] };
   gameState.mana = {
     player: { red: 0, blue: 0, green: 0, black: 0, white: 0, none: 0 },

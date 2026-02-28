@@ -19,6 +19,18 @@ import {
 } from './cards.js';
 import { endCurrentTurn, confirmDiscardPrompt } from './turn.js';
 
+// ===== 長押し（ホールド）検出 =====
+let _holdTimerId = null;
+let _holdStartX  = 0;
+let _holdStartY  = 0;
+
+function _cancelHold() {
+  if (_holdTimerId !== null) {
+    clearTimeout(_holdTimerId);
+    _holdTimerId = null;
+  }
+}
+
 // ===== ヒットテスト =====
 
 function getCanvasPoint(event) {
@@ -188,6 +200,36 @@ export function onPointerDown(event) {
     return;
   }
 
+  // === 長押し検出（敵カードも含む全カードを対象）===
+  // 手札の敵カードは裏向きのため除外
+  const _holdCard = getTopCardAtPoint(
+    point,
+    (c) => !c.ui.pendingRemoval && !(c.zone === 'hand' && c.owner === 'enemy'),
+  );
+  if (_holdCard) {
+    _holdStartX = point.x;
+    _holdStartY = point.y;
+    const _holdCardId = _holdCard.id;
+    _holdTimerId = setTimeout(() => {
+      _holdTimerId = null;
+      // オーバーレイ表示
+      gameState.cardDetailOverlay = { cardId: _holdCardId };
+      // ドラッグ中だった場合は元の位置に戻してキャンセル
+      if (gameState.activePointer && gameState.activePointer.cardId === _holdCardId) {
+        if (gameState.activePointer.kind === 'drag') {
+          const c = gameState.cards.find((cd) => cd.id === _holdCardId && !cd.ui.pendingRemoval);
+          if (c) {
+            c.ui.isDragging = false;
+            c.x = gameState.activePointer.originalX;
+            c.y = gameState.activePointer.originalY;
+          }
+          gameState.interactionLock = false;
+        }
+        gameState.activePointer = null;
+      }
+    }, 350);
+  }
+
   // Canvas内のEnd Turnボタン（右中央）
   if (pointInCircle(point.x, point.y, END_TURN_UI) && canUseEndTurnButton()) {
     endCurrentTurn('manual');
@@ -238,6 +280,16 @@ export function onPointerDown(event) {
 }
 
 export function onPointerMove(event) {
+  // 長押しタイマーをキャンセル（指が動いた場合）
+  if (_holdTimerId !== null) {
+    const pt = getCanvasPoint(event);
+    const dx = pt.x - _holdStartX;
+    const dy = pt.y - _holdStartY;
+    if (dx * dx + dy * dy > 8 * 8) {
+      _cancelHold();
+    }
+  }
+
   if (!gameState.activePointer || gameState.activePointer.pointerId !== event.pointerId) {
     return;
   }
@@ -262,6 +314,15 @@ export function onPointerMove(event) {
 }
 
 export function onPointerUp(event) {
+  _cancelHold();
+
+  // 詳細オーバーレイ表示中なら閉じて終了
+  if (gameState.cardDetailOverlay) {
+    gameState.cardDetailOverlay = null;
+    try { canvas.releasePointerCapture(event.pointerId); } catch (_) { /* no-op */ }
+    return;
+  }
+
   if (!gameState.activePointer || gameState.activePointer.pointerId !== event.pointerId) {
     return;
   }
