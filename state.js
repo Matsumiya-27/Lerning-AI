@@ -83,6 +83,8 @@ export const gameState = {
   },
   // 循環効果: プレイヤーが手札を1枚選んでデッキ底に戻す待機状態
   cycleSelection: null, // null | { owner, processNext, matchId }
+  // 選択廃棄: プレイヤーが手札からn枚選んで捨てる待機状態
+  handDiscardSelection: null, // null | { count, owner, processNext, matchId, selectedIds: [] }
   fx: {
     screenShakeUntilMs: 0,
     screenShakePower: 0,

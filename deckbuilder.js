@@ -47,6 +47,9 @@ function effectDisplayText(eff) {
     case 'upgradeDa':    return `DA${eff.value}${eff.boostL ? `+${eff.boostL}/${eff.boostR}` : ''}`;
     case 'nullifySelf':  return '自身の効果テキストを無効にする';
     case 'enableAura':   return eff.aura === 'nullify_adj' ? '隣の効果を無効' : '自陣全効果を無効';
+    case 'handDiscard':  return `手札から${eff.count}枚選んで捨てる`;
+    case 'bounty':       return `豊穣${eff.count}（デッキトップ${eff.count}枚を退場）`;
+    case 'solidarity':   return `連帯${eff.count}（同種族${eff.count}体以上）→${effectDisplayText(eff.inner)}`;
     default: return eff.type;
   }
 }
@@ -124,8 +127,11 @@ function createCardEl(cardType, onAdd, onRemove) {
     effectLabel.textContent = effectDisplayText(effects[0]);
     effectLabel.style.color = ATTR_COLOR[attrKey] ?? '#aaa';
   } else if (keywords.length > 0) {
-    effectLabel.textContent = keywords.map((k) => KW_JP[k] ?? k).join(' ');
-    effectLabel.style.color = KW_COLOR[keywords[0]] ?? '#cc4444';
+    effectLabel.textContent = keywords.map((k) => {
+      if (k.startsWith('decay_')) return `腐敗${k.split('_')[1]}`;
+      return KW_JP[k] ?? k;
+    }).join(' ');
+    effectLabel.style.color = keywords[0]?.startsWith('decay_') ? '#5ccc44' : (KW_COLOR[keywords[0]] ?? '#cc4444');
   } else {
     effectLabel.textContent = '─';
     effectLabel.style.color = '#5a7aaa';

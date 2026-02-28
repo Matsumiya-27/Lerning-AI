@@ -121,6 +121,19 @@ export const CARD_TYPES = [
     ], keywords: [] },
   { id: 46, rank: 3, attribute: 'green', type: '緑種族2', la: 5, ra: 5, directAttack: 2,
     effects: [{ type: 'manaGate', cost: 6, color: 'green', inner: { type: 'draw', count: 2 } }], keywords: [] },
+
+  // ── 黒 Rank1 ──
+  // 腐敗1: 場にある間、両隣のカードに-1/-1を付与
+  { id: 47, rank: 1, attribute: 'black', type: '黒種族1', la: 3, ra: 3,
+    effects: [], keywords: ['decay_1'] },
+
+  // 豊穣2: 召喚時にデッキトップ2枚を退場済みへ送る
+  { id: 48, rank: 1, attribute: 'black', type: '黒種族1', la: 2, ra: 2,
+    effects: [{ type: 'bounty', count: 2 }], keywords: [] },
+
+  // 連帯2: 場に同種族（黒種族1）が2体以上いれば1枚ドロー
+  { id: 49, rank: 1, attribute: 'black', type: '黒種族1', la: 2, ra: 2,
+    effects: [{ type: 'solidarity', count: 2, inner: { type: 'draw', count: 1 } }], keywords: [] },
 ];
 
 // デッキ状態（セッション永続・ゲームリセットをまたいで保持）
