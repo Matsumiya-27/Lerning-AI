@@ -160,7 +160,19 @@ export function buildInitialCards() {
 
 // ===== 召喚・生贄ロジック =====
 
-export function getSummonTributeOptions(owner, rank) {
+export function getSummonTributeOptions(owner, rank, card = null) {
+  // solidarity_free_N: 同種族が N-1 体以上いれば生贄なし召喚可
+  if (card && !card.ui?.effectsNullified) {
+    const freeKw = card.keywords?.find((kw) => kw.startsWith('solidarity_free_'));
+    if (freeKw) {
+      const needed = parseInt(freeKw.split('_').pop(), 10);
+      const sameOnField = getFieldCards(owner).filter(
+        (c) => c.type === card.type && !c.ui.pendingRemoval,
+      ).length;
+      if (sameOnField >= needed - 1) return [[]];
+    }
+  }
+
   if (rank <= 1) {
     return [[]];
   }
@@ -271,7 +283,7 @@ export function canSummonCard(owner, card) {
     return hasEmptyFieldSlot();
   }
 
-  const tributeOptions = getSummonTributeOptions(owner, card.rank);
+  const tributeOptions = getSummonTributeOptions(owner, card.rank, card);
   return tributeOptions.some((ids) => getSummonCandidateSlots(owner, ids).length > 0);
 }
 
@@ -294,6 +306,19 @@ export function canConfirmSummonSelection() {
   if (card.rank === 1) {
     return true;
   }
+
+  // solidarity_free_N: 条件を満たせば生贄なしでも確認可
+  if (!card.ui.effectsNullified) {
+    const freeKw = card.keywords?.find((kw) => kw.startsWith('solidarity_free_'));
+    if (freeKw) {
+      const needed = parseInt(freeKw.split('_').pop(), 10);
+      const sameOnField = getFieldCards(card.owner).filter(
+        (c) => c.type === card.type && !c.ui.pendingRemoval,
+      ).length;
+      if (sameOnField >= needed - 1) return true;
+    }
+  }
+
   if (card.rank === 2) {
     return selectedCards.length >= 1;
   }
@@ -577,6 +602,15 @@ export function canUseEndTurnButton() {
   return isManualTurn() && !gameState.interactionLock && !gameState.result.winner;
 }
 
+// ===== 戦闘ヘルパー =====
+
+// on_death_damage_N キーワードの N を返す（なければ 0）
+function getDeathDamage(card) {
+  if (!card || card.ui.effectsNullified) return 0;
+  const kw = card.keywords?.find((k) => k.startsWith('on_death_damage_'));
+  return kw ? (parseInt(kw.split('_').pop(), 10) || 0) : 0;
+}
+
 // ===== 戦闘解決 =====
 
 export function resolveSwipeAttack(attacker, direction) {
@@ -692,6 +726,16 @@ export function resolveSwipeAttack(attacker, direction) {
   }
   if (defenderLost && defender.effect === 'revenge') {
     effectDamageList.push({ targetOwner: attacker.owner, amount: 2, label: 'REVENGE -2', color: '#e060ff' });
+  }
+
+  // on_death_damage_N キーワード: 戦闘破壊時に相手プレイヤーへNダメージ
+  const attDeathDmg = getDeathDamage(attacker);
+  if (attackerLost && attDeathDmg > 0) {
+    effectDamageList.push({ targetOwner: defender.owner, amount: attDeathDmg, label: `DEATH -${attDeathDmg}`, color: '#a040ff' });
+  }
+  const defDeathDmg = getDeathDamage(defender);
+  if (defenderLost && defDeathDmg > 0) {
+    effectDamageList.push({ targetOwner: attacker.owner, amount: defDeathDmg, label: `DEATH -${defDeathDmg}`, color: '#a040ff' });
   }
 
   // deathcurse: 戦闘で破壊されたとき、勝利したカードの基本攻撃力を永続 -2（引き分けは対象外）
@@ -1341,6 +1385,37 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
         processNext();
         return;
       }
+      case 'boostAllOwn': {
+        // 自分の全フィールドカードの基本攻撃力を永続 +l/+r
+        getFieldCards(owner).forEach((c) => {
+          c.combat.baseAttackLeft  += eff.l;
+          c.combat.baseAttackRight += eff.r;
+        });
+        addDamageText(card.x, card.y - 60, `全体+${eff.l}/+${eff.r}`, '#88ffaa');
+        applyBoardEffects();
+        checkStateBased();
+        processNext();
+        return;
+      }
+      case 'tribeCountDamage': {
+        // 自分の場の指定種族の枚数分だけ相手プレイヤーにダメージ
+        const n = getFieldCards(owner).filter((c) => c.type === eff.tribe).length;
+        if (n > 0) {
+          const targetOwner = owner === 'player' ? 'enemy' : 'player';
+          gameState.hp[targetOwner] = Math.max(0, gameState.hp[targetOwner] - n);
+          triggerHpPulse(targetOwner, 560);
+          addDamageText(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20, `-${n}`, '#ffffd0');
+          triggerScreenShake(6, 180);
+          const hpPos = getHpBadgePosition(targetOwner);
+          addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
+          if (gameState.hp[targetOwner] <= 0) {
+            finishGame(owner);
+            return;
+          }
+        }
+        processNext();
+        return;
+      }
       default:
         processNext();
         return;
@@ -1429,6 +1504,13 @@ export function resolveDirectAttack(attacker) {
   // doubleblade: 通常ダメージ、ただし自分にも同量ダメージ
   // effectsNullified 時は DA を強制 1 にする
   const directDamage = attacker.ui.effectsNullified ? 1 : (attacker.combat.directAttack ?? 1);
+
+  // DA:0 カード: 直接攻撃不可
+  if (directDamage <= 0) {
+    if (attacker.owner === 'player') triggerUsedCardFeedback(attacker, performance.now());
+    return;
+  }
+
   const selfDamage = attacker.effect === 'doubleblade' ? directDamage : 0;
 
   attacker.combat.hasActedThisTurn = true;
@@ -1509,17 +1591,33 @@ export function applyBoardEffects() {
   });
 
   // Step2.5: 腐敗キーワード: 両隣のカードに -N/-N を付与（永続オーラ）
-  fieldCards.filter((c) => !c.ui.effectsNullified && c.keywords?.some((kw) => kw.startsWith('decay_'))).forEach((aura) => {
+  // decay_immunity を持つオーナーの自陣カードは腐敗の影響を受けない
+  fieldCards.filter((c) => !c.ui.effectsNullified && c.keywords?.some((kw) => kw.startsWith('decay_') && kw !== 'decay_immunity')).forEach((aura) => {
     const idx = aura.fieldSlotIndex;
     if (idx === null) return;
-    const decayKw = aura.keywords.find((kw) => kw.startsWith('decay_'));
+    const decayKw = aura.keywords.find((kw) => kw.startsWith('decay_') && kw !== 'decay_immunity');
     const power = parseInt(decayKw.split('_')[1], 10) || 1;
     [-1, 1].forEach((delta) => {
       const neighbor = getCardAtSlot(idx + delta);
       if (neighbor) {
-        neighbor.combat.attackLeft  = Math.max(0, neighbor.combat.attackLeft  - power);
-        neighbor.combat.attackRight = Math.max(0, neighbor.combat.attackRight - power);
+        // decay_immunity: 隣のオーナーが腐敗耐性を持つなら適用しない
+        const ownerHasImmunity = fieldCards.some(
+          (c) => c.owner === neighbor.owner && c.keywords?.includes('decay_immunity'),
+        );
+        if (!ownerHasImmunity) {
+          neighbor.combat.attackLeft  = Math.max(0, neighbor.combat.attackLeft  - power);
+          neighbor.combat.attackRight = Math.max(0, neighbor.combat.attackRight - power);
+        }
       }
+    });
+  });
+
+  // Step2.6: field_equalize: 自陣の各カードのLA/RAをmax値に揃える
+  fieldCards.filter((c) => c.keywords?.includes('field_equalize') && !c.ui.effectsNullified).forEach((aura) => {
+    fieldCards.filter((c) => c.owner === aura.owner).forEach((c) => {
+      const mx = Math.max(c.combat.attackLeft, c.combat.attackRight);
+      c.combat.attackLeft  = mx;
+      c.combat.attackRight = mx;
     });
   });
 
@@ -1694,6 +1792,11 @@ function performDoubleAdjacentAttack(card, matchIdAtStart) {
     if (c.id !== card.id && c.effect === 'revenge') {
       revengeList.push({ targetOwner: card.owner, amount: 2 });
     }
+    // on_death_damage_N キーワード
+    const ddmg = getDeathDamage(c);
+    if (ddmg > 0) {
+      revengeList.push({ targetOwner: c.owner === 'player' ? 'enemy' : 'player', amount: ddmg });
+    }
   });
 
   setTimeout(() => {
@@ -1784,10 +1887,14 @@ function performDoubleCenterAttack(card, matchIdAtStart) {
   triggerScreenShake(9, 220);
   addDamageText(card.x, card.y - 80, 'DOUBLE HIT!', '#ff8a8a');
 
-  // revenge効果: 破壊された敵カードがrevengeを持つなら card.owner へ2ダメージ
+  // revenge効果 / on_death_damage_N: 破壊されたカードのデス効果を収集
   destroyed.forEach((c) => {
     if (c.id !== card.id && c.effect === 'revenge') {
       revengeList.push({ targetOwner: card.owner, amount: 2 });
+    }
+    const ddmg = getDeathDamage(c);
+    if (ddmg > 0) {
+      revengeList.push({ targetOwner: c.owner === 'player' ? 'enemy' : 'player', amount: ddmg });
     }
   });
 

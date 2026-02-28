@@ -134,6 +134,117 @@ export const CARD_TYPES = [
   // 連帯2: 場に同種族（黒種族1）が2体以上いれば1枚ドロー
   { id: 49, rank: 1, attribute: 'black', type: '黒種族1', la: 2, ra: 2,
     effects: [{ type: 'solidarity', count: 2, inner: { type: 'draw', count: 1 } }], keywords: [] },
+
+  // ── 黒 Rank1 (追加) ──
+  // 豊穣1: 召喚時デッキトップ1枚を退場へ
+  { id: 50, rank: 1, attribute: 'black', type: '黒種族2', la: 2, ra: 1,
+    effects: [{ type: 'bounty', count: 1 }], keywords: [] },
+  // 腐敗1: 場にある間、両隣に-1/-1
+  { id: 51, rank: 1, attribute: 'black', type: '黒種族1', la: 1, ra: 1,
+    effects: [], keywords: ['decay_1'] },
+  // 無効果
+  { id: 52, rank: 1, attribute: 'black', type: '黒種族1', la: 2, ra: 2,
+    effects: [], keywords: [] },
+  // DA0/捨身: 直接攻撃不可、戦闘後自壊
+  { id: 53, rank: 1, attribute: 'black', type: '黒種族1', la: 4, ra: 3, directAttack: 0,
+    effects: [], keywords: ['sutemi'] },
+  // DA0/豊穣1
+  { id: 54, rank: 1, attribute: 'black', type: '黒種族2', la: 3, ra: 1, directAttack: 0,
+    effects: [{ type: 'bounty', count: 1 }], keywords: [] },
+  // 破壊時1ダメージ
+  { id: 55, rank: 1, attribute: 'black', type: '黒種族3', la: 2, ra: 1,
+    effects: [], keywords: ['on_death_damage_1'] },
+
+  // ── 黒 Rank2 (追加) ──
+  // 破壊時2ダメージ
+  { id: 56, rank: 2, attribute: 'black', type: '黒種族3', la: 5, ra: 1,
+    effects: [], keywords: ['on_death_damage_2'] },
+  // 腐敗2
+  { id: 57, rank: 2, attribute: 'black', type: '黒種族1', la: 1, ra: 1,
+    effects: [], keywords: ['decay_2'] },
+  // 豊穣2
+  { id: 58, rank: 2, attribute: 'black', type: '黒種族2', la: 3, ra: 3,
+    effects: [{ type: 'bounty', count: 2 }], keywords: [] },
+  // DA2
+  { id: 59, rank: 2, attribute: 'black', type: '黒種族1', la: 5, ra: 4, directAttack: 2,
+    effects: [], keywords: [] },
+  // [3マナ]豊穣3
+  { id: 60, rank: 2, attribute: 'black', type: '黒種族1', la: 4, ra: 4,
+    effects: [{ type: 'manaGate', cost: 3, color: null, inner: { type: 'bounty', count: 3 } }], keywords: [] },
+  // DA2/[3マナ]腐敗1付与
+  { id: 61, rank: 2, attribute: 'black', type: '黒種族1', la: 5, ra: 5, directAttack: 2,
+    effects: [{ type: 'manaGate', cost: 3, color: null, inner: { type: 'enableAura', aura: 'decay_1' } }], keywords: [] },
+
+  // ── 黒 Rank3 (追加) ──
+  // DA2/[4マナ]DA4/捨身
+  { id: 62, rank: 3, attribute: 'black', type: '黒種族2', la: 8, ra: 8, directAttack: 2,
+    effects: [{ type: 'manaGate', cost: 4, color: null, inner: { type: 'upgradeDa', value: 4 } }], keywords: ['sutemi'] },
+  // [7マナ]腐敗3付与
+  { id: 63, rank: 3, attribute: 'black', type: '黒種族1', la: 5, ra: 5,
+    effects: [{ type: 'manaGate', cost: 7, color: null, inner: { type: 'enableAura', aura: 'decay_3' } }], keywords: [] },
+  // DA2/破壊時4ダメージ
+  { id: 64, rank: 3, attribute: 'black', type: '黒種族3', la: 9, ra: 1, directAttack: 2,
+    effects: [], keywords: ['on_death_damage_4'] },
+  // DA3/腐敗耐性（自陣への腐敗無効）
+  { id: 65, rank: 3, attribute: 'black', type: '黒種族1', la: 5, ra: 5, directAttack: 3,
+    effects: [], keywords: ['decay_immunity'] },
+  // [黒7マナ]豊穣5 / [黒7マナ]腐敗5付与
+  { id: 66, rank: 3, attribute: 'black', type: '黒種族2', la: 4, ra: 4,
+    effects: [
+      { type: 'manaGate', cost: 7, color: 'black', inner: { type: 'bounty', count: 5 } },
+      { type: 'manaGate', cost: 7, color: 'black', inner: { type: 'enableAura', aura: 'decay_5' } },
+    ], keywords: [] },
+
+  // ── 白 Rank1 ──
+  // 攻撃できない 3/3
+  { id: 67, rank: 1, attribute: 'white', type: '白種族1', la: 3, ra: 3,
+    effects: [], keywords: ['no_attack'] },
+  // 攻撃できない 2/4
+  { id: 68, rank: 1, attribute: 'white', type: '白種族1', la: 2, ra: 4,
+    effects: [], keywords: ['no_attack'] },
+  // [連帯3]補充
+  { id: 69, rank: 1, attribute: 'white', type: '白種族1', la: 1, ra: 3,
+    effects: [{ type: 'solidarity', count: 3, inner: { type: 'draw', count: 1 } }], keywords: [] },
+  // [連帯2]全体+1/0
+  { id: 70, rank: 1, attribute: 'white', type: '白種族1', la: 2, ra: 3,
+    effects: [{ type: 'solidarity', count: 2, inner: { type: 'boostAllOwn', l: 1, r: 0 } }], keywords: [] },
+  // 守護/攻撃できない
+  { id: 71, rank: 1, attribute: 'white', type: '白種族1', la: 2, ra: 3,
+    effects: [], keywords: ['shugo', 'no_attack'] },
+  // [連帯2]循環
+  { id: 72, rank: 1, attribute: 'white', type: '白種族1', la: 2, ra: 3,
+    effects: [{ type: 'solidarity', count: 2, inner: { type: 'cycle' } }], keywords: [] },
+
+  // ── 白 Rank2 ──
+  // 均等化: 自陣のLA/RAをmax値に揃えるアーラ
+  { id: 73, rank: 2, attribute: 'white', type: '白種族2', la: 4, ra: 4,
+    effects: [], keywords: ['field_equalize'] },
+  // [3マナ]選出[白種族1]
+  { id: 74, rank: 2, attribute: 'white', type: '白種族1', la: 3, ra: 3,
+    effects: [{ type: 'manaGate', cost: 3, color: null, inner: { type: 'recruit', tribe: '白種族1' } }], keywords: [] },
+  // [2マナ]補充/攻撃できない
+  { id: 75, rank: 2, attribute: 'white', type: '白種族2', la: 5, ra: 5,
+    effects: [{ type: 'manaGate', cost: 2, color: null, inner: { type: 'draw', count: 1 } }], keywords: ['no_attack'] },
+  // [連帯3]生贄なしで召喚できる
+  { id: 76, rank: 2, attribute: 'white', type: '白種族1', la: 1, ra: 1,
+    effects: [], keywords: ['solidarity_free_3'] },
+  // [1マナ]守護付与
+  { id: 77, rank: 2, attribute: 'white', type: '白種族1', la: 4, ra: 4,
+    effects: [{ type: 'manaGate', cost: 1, color: null, inner: { type: 'enableAura', aura: 'shugo' } }], keywords: [] },
+  // 攻撃できない 6/6
+  { id: 78, rank: 2, attribute: 'white', type: '白種族1', la: 6, ra: 6,
+    effects: [], keywords: ['no_attack'] },
+
+  // ── 白 Rank3 ──
+  // DA3/[白7マナ]場の白種族1枚数分ダメージ
+  { id: 79, rank: 3, attribute: 'white', type: '白種族1', la: 7, ra: 7, directAttack: 3,
+    effects: [{ type: 'manaGate', cost: 7, color: 'white', inner: { type: 'tribeCountDamage', tribe: '白種族1' } }], keywords: [] },
+  // [連帯3]補充/DA3
+  { id: 80, rank: 3, attribute: 'white', type: '白種族1', la: 5, ra: 7, directAttack: 3,
+    effects: [{ type: 'solidarity', count: 3, inner: { type: 'draw', count: 1 } }], keywords: [] },
+  // DA2/守護
+  { id: 81, rank: 3, attribute: 'white', type: '白種族1', la: 5, ra: 7, directAttack: 2,
+    effects: [], keywords: ['shugo'] },
 ];
 
 // デッキ状態（セッション永続・ゲームリセットをまたいで保持）

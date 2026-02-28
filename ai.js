@@ -72,7 +72,7 @@ export function chooseBestEnemySummon() {
 
   // 通常召喚の評価
   hand.forEach((card) => {
-    const tributeOptions = getSummonTributeOptions('enemy', card.rank);
+    const tributeOptions = getSummonTributeOptions('enemy', card.rank, card);
     if (tributeOptions.length === 0) {
       return;
     }
