@@ -214,6 +214,7 @@ export function resetGame() {
   gameState.discardPrompt.active = false;
   gameState.discardPrompt.owner = null;
   gameState.cycleSelection = null;
+  gameState.handDiscardSelection = null;
   gameState.graveyard = { player: [], enemy: [] };
   gameState.mana = {
     player: { red: 0, blue: 0, green: 0, black: 0, white: 0, none: 0 },
@@ -249,6 +250,11 @@ export function updateTurnFlow(nowMs) {
 
   // 全破棄ダイアログ中はターンフローを止める
   if (gameState.discardPrompt.active) {
+    return;
+  }
+
+  // 選択廃棄オーバーレイ中はターンフローを止める
+  if (gameState.handDiscardSelection) {
     return;
   }
 

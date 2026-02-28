@@ -1277,6 +1277,70 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
         processNext();
         return;
       }
+      case 'handDiscard': {
+        // 手札からn枚を選んで捨てる（プレイヤーは選択式、AIは先頭n枚を自動廃棄）
+        const handCards = getHandCards(owner);
+        const count = Math.min(eff.count, handCards.length);
+        if (count === 0) { processNext(); return; }
+
+        if (owner !== 'player') {
+          // 敵AI: 先頭n枚を廃棄（ランク昇順で選ぶ）
+          const sorted = handCards.slice().sort((a, b) => a.rank - b.rank);
+          const nowMs = performance.now();
+          sorted.slice(0, count).forEach((c) => markCardDestroyed(c, nowMs));
+          setTimeout(() => {
+            if (gameState.matchId !== matchIdAtStart) return;
+            reflowHand(owner);
+            processNext();
+          }, DESTROY_ANIMATION_MS + 30);
+          return;
+        }
+
+        // プレイヤー: 選択オーバーレイを表示して待機
+        gameState.handDiscardSelection = {
+          count,
+          owner,
+          processNext,
+          matchId: matchIdAtStart,
+          selectedIds: [],
+        };
+        return;
+      }
+      case 'bounty': {
+        // デッキの一番上からn枚を可能な限り退場済みへ送る（マナも積算）
+        const pile = owner === 'player' ? gameState.playerDeckPile : gameState.enemyDeckPile;
+        const toMill = Math.min(eff.count, pile.length);
+        for (let i = 0; i < toMill; i += 1) {
+          const entry = pile.pop(); // deckPile 末尾 = デッキトップ
+          if (entry) {
+            const ct = getCardType(entry.typeId);
+            const rankVal  = ct ? (ct.rank ?? 1) : 1;
+            const colorKey = ct ? (ct.attribute ?? 'none') : 'none';
+            gameState.graveyard[owner].push({
+              rank: rankVal,
+              cardCategory: 'unit',
+              attribute: ct?.attribute ?? null,
+            });
+            gameState.mana[owner][colorKey] += rankVal;
+          }
+        }
+        addDamageText(card.x, card.y - 60, `豊穣${toMill}`, '#ccffaa');
+        processNext();
+        return;
+      }
+      case 'solidarity': {
+        // 場の自分の同じ種族のカード枚数（自身含む）がcount以上なら inner 効果を発動
+        const tribe = card.type;
+        const sameCount = getFieldCards(owner).filter(
+          (c) => c.type === tribe && !c.ui.pendingRemoval,
+        ).length;
+        if (sameCount >= eff.count) {
+          // 条件達成: inner 効果を次の位置に差し込む
+          effects.splice(idx, 0, eff.inner);
+        }
+        processNext();
+        return;
+      }
       default:
         processNext();
         return;
@@ -1444,6 +1508,21 @@ export function applyBoardEffects() {
     });
   });
 
+  // Step2.5: 腐敗キーワード: 両隣のカードに -N/-N を付与（永続オーラ）
+  fieldCards.filter((c) => !c.ui.effectsNullified && c.keywords?.some((kw) => kw.startsWith('decay_'))).forEach((aura) => {
+    const idx = aura.fieldSlotIndex;
+    if (idx === null) return;
+    const decayKw = aura.keywords.find((kw) => kw.startsWith('decay_'));
+    const power = parseInt(decayKw.split('_')[1], 10) || 1;
+    [-1, 1].forEach((delta) => {
+      const neighbor = getCardAtSlot(idx + delta);
+      if (neighbor) {
+        neighbor.combat.attackLeft  = Math.max(0, neighbor.combat.attackLeft  - power);
+        neighbor.combat.attackRight = Math.max(0, neighbor.combat.attackRight - power);
+      }
+    });
+  });
+
   // Step3: 一時攻撃力減算（戦闘で与えたダメージ分、ターン中のみ）
   fieldCards.forEach((c) => {
     if (c.combat.tempAttackLeftReduction > 0) {
@@ -1485,19 +1564,13 @@ export function applyBoardEffects() {
   applyHandCardPreviews();
 }
 
-// 手札にある時点でカード能力変化を表示する（colorScale/manaGate プレビュー）
+// 手札カードの攻撃力をベース値にリセットする。
+// 仕様変更: 召喚後の能力値プレビューは手札中に表示しない。
 function applyHandCardPreviews() {
-  const handCards = gameState.cards.filter((c) => c.zone === 'hand' && !c.ui.pendingRemoval);
-  handCards.forEach((card) => {
-    // ベース値にリセット
-    card.combat.attackLeft  = card.combat.baseAttackLeft;
-    card.combat.attackRight = card.combat.baseAttackRight;
+  gameState.cards.filter((c) => c.zone === 'hand' && !c.ui.pendingRemoval).forEach((card) => {
+    card.combat.attackLeft   = card.combat.baseAttackLeft;
+    card.combat.attackRight  = card.combat.baseAttackRight;
     card.combat.directAttack = card.combat.baseDirectAttack;
-    const owner = card.owner;
-    const manaTotal = getManaTotal(owner);
-    (card.effects ?? []).forEach((eff) => {
-      _applyHandPreview(card, eff, owner, manaTotal);
-    });
   });
 }
 

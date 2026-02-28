@@ -1,9 +1,9 @@
 // ===== 入力ハンドラ =====
-import { CARD_WIDTH, CARD_HEIGHT, SWIPE_THRESHOLD, END_TURN_UI } from './constants.js';
+import { CARD_WIDTH, CARD_HEIGHT, SWIPE_THRESHOLD, END_TURN_UI, DESTROY_ANIMATION_MS } from './constants.js';
 import {
   canvas, gameState, slotCenters,
   getCardById, getFieldCards, getSlotOccupant,
-  startMoveAnimation, reflowHand, getSummonSelectionButtons,
+  startMoveAnimation, reflowHand, markCardDestroyed, getSummonSelectionButtons,
   getDiscardPromptButtons, getOfferingChoiceButtons, getStealChoiceButtons,
 } from './state.js';
 import {
@@ -87,6 +87,43 @@ export function onPointerDown(event) {
       sel.processNext();
     }
     return; // cycleSelection 中は他の操作を受け付けない
+  }
+
+  // 選択廃棄: 手札からn枚選んで捨てる
+  if (gameState.handDiscardSelection) {
+    const sel = gameState.handDiscardSelection;
+    if (gameState.matchId !== sel.matchId) {
+      gameState.handDiscardSelection = null;
+      return;
+    }
+    const hit = gameState.cards.find(
+      (c) => c.owner === 'player' && c.zone === 'hand' && !c.ui.pendingRemoval
+        && pointInCard(point.x, point.y, c),
+    );
+    if (hit) {
+      const idx = sel.selectedIds.indexOf(hit.id);
+      if (idx >= 0) {
+        sel.selectedIds.splice(idx, 1); // 選択解除
+      } else if (sel.selectedIds.length < sel.count) {
+        sel.selectedIds.push(hit.id);   // 選択追加
+      }
+      // n枚選択完了で自動確定
+      if (sel.selectedIds.length === sel.count) {
+        gameState.handDiscardSelection = null;
+        const nowMs = performance.now();
+        sel.selectedIds.forEach((id) => {
+          const c = gameState.cards.find((card) => card.id === id);
+          if (c) markCardDestroyed(c, nowMs);
+        });
+        const { processNext, matchId: mid, owner } = sel;
+        setTimeout(() => {
+          if (gameState.matchId !== mid) return;
+          reflowHand(owner);
+          processNext();
+        }, DESTROY_ANIMATION_MS + 30);
+      }
+    }
+    return; // handDiscardSelection 中は他の操作を受け付けない
   }
 
   // offering 選択オーバーレイ

@@ -58,6 +58,9 @@ function effectDisplayText(eff) {
     case 'upgradeDa':    return `DA${eff.value}${eff.boostL ? `+${eff.boostL}/${eff.boostR}` : ''}`;
     case 'nullifySelf':  return '自身の効果テキストを無効にする';
     case 'enableAura':   return eff.aura === 'nullify_adj' ? '隣の効果を無効' : '自陣全効果を無効';
+    case 'handDiscard':  return `手札から${eff.count}枚選んで捨てる`;
+    case 'bounty':       return `豊穣${eff.count}（デッキトップ${eff.count}枚を退場）`;
+    case 'solidarity':   return `連帯${eff.count}（同種族${eff.count}体以上）→${effectDisplayText(eff.inner)}`;
     default: return eff.type;
   }
 }
@@ -524,8 +527,15 @@ function drawCards(nowMs) {
       }
       if (card.keywords && card.keywords.length > 0) {
         card.keywords.forEach((kw, ki) => {
-          ctx.fillStyle = KW_COLOR[kw] ?? '#cc4444';
-          ctx.fillText(KW_JP[kw] ?? kw, centerX, centerY + 50 + ki * 11);
+          let label = KW_JP[kw] ?? kw;
+          let color = KW_COLOR[kw] ?? '#cc4444';
+          if (kw.startsWith('decay_')) {
+            const n = kw.split('_')[1];
+            label = `腐敗${n}`;
+            color = '#5ccc44';
+          }
+          ctx.fillStyle = color;
+          ctx.fillText(label, centerX, centerY + 50 + ki * 11);
         });
       }
 
@@ -956,6 +966,36 @@ function drawDeckCounts() {
   ctx.restore();
 }
 
+function drawHandDiscardSelection() {
+  const sel = gameState.handDiscardSelection;
+  if (!sel) return;
+
+  // 暗転背景
+  ctx.fillStyle = 'rgba(0,0,0,0.50)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // プレイヤー手札カードをハイライト
+  const hand = gameState.cards.filter(
+    (c) => c.owner === 'player' && c.zone === 'hand' && !c.ui.pendingRemoval,
+  );
+  hand.forEach((c) => {
+    const selected = sel.selectedIds.includes(c.id);
+    ctx.strokeStyle = selected ? '#ff4444' : '#44ffff';
+    ctx.lineWidth = selected ? 4 : 2;
+    ctx.strokeRect(c.x - CARD_WIDTH / 2, c.y - CARD_HEIGHT / 2, CARD_WIDTH, CARD_HEIGHT);
+  });
+
+  // ガイドテキスト
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(
+    `捨てるカードを選んでください (${sel.selectedIds.length}/${sel.count}枚)`,
+    CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10,
+  );
+  ctx.textAlign = 'left';
+}
+
 function drawCycleSelectionOverlay() {
   if (!gameState.cycleSelection) return;
   // 暗転背景
@@ -1008,6 +1048,7 @@ export function draw(nowMs) {
   drawOfferingChoiceOverlay();
   drawStealChoiceOverlay();
   drawDiscardPrompt();
+  drawHandDiscardSelection();
   drawCycleSelectionOverlay();
 
   if (nowMs < gameState.fx.koFlashUntilMs) {
