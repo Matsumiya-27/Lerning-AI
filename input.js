@@ -308,7 +308,7 @@ export function onPointerUp(event) {
         // performSummon 経由で召喚酔い・rush・その他効果を正しく処理する
         performSummon(card, targetSlot, []);
       } else {
-        const tributeOptions = getSummonTributeOptions(owner, card.rank);
+        const tributeOptions = getSummonTributeOptions(owner, card.rank, card);
         const selected = chooseBestTributeOptionForTarget(owner, tributeOptions, targetSlot.id);
 
         if (!selected) {

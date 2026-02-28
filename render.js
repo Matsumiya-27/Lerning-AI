@@ -57,33 +57,48 @@ function effectDisplayText(eff) {
     case 'recruit':      return `選出[${eff.tribe}]`;
     case 'upgradeDa':    return `DA${eff.value}${eff.boostL ? `+${eff.boostL}/${eff.boostR}` : ''}`;
     case 'nullifySelf':  return '自身の効果テキストを無効にする';
-    case 'enableAura':   return eff.aura === 'nullify_adj' ? '隣の効果を無効' : '自陣全効果を無効';
-    case 'handDiscard':  return `手札から${eff.count}枚選んで捨てる`;
-    case 'bounty':       return `豊穣${eff.count}（デッキトップ${eff.count}枚を退場）`;
-    case 'solidarity':   return `連帯${eff.count}（同種族${eff.count}体以上）→${effectDisplayText(eff.inner)}`;
+    case 'enableAura': {
+      if (eff.aura === 'nullify_adj') return '隣の効果を無効';
+      if (eff.aura === 'nullify_own') return '自陣全効果を無効';
+      if (eff.aura === 'shugo') return '守護を付与';
+      if (eff.aura?.startsWith('decay_')) {
+        const n = eff.aura.split('_')[1];
+        return `腐敗${n}を付与`;
+      }
+      return eff.aura ?? '';
+    }
+    case 'handDiscard':      return `手札から${eff.count}枚選んで捨てる`;
+    case 'bounty':           return `豊穣${eff.count}（デッキトップ${eff.count}枚を退場）`;
+    case 'solidarity':       return `連帯${eff.count}（同種族${eff.count}体以上）→${effectDisplayText(eff.inner)}`;
+    case 'boostAllOwn':      return `自陣全体+${eff.l}/+${eff.r}`;
+    case 'tribeCountDamage': return `[${eff.tribe}数]分ダメージ`;
     default: return eff.type;
   }
 }
 
 const KW_JP = {
-  sutemi:        '捨身',
-  shugo:         '守護',
-  no_tribute:    '生贄不可',
-  no_attack:     '攻撃不能',
-  dbl_tribute:   '2体分生贄',
-  double_attack: '両隣攻撃',
-  nullify_adj:   '[隣効果無効中]',
-  nullify_own:   '[自陣無効中]',
+  sutemi:          '捨身',
+  shugo:           '守護',
+  no_tribute:      '生贄不可',
+  no_attack:       '攻撃不能',
+  dbl_tribute:     '2体分生贄',
+  double_attack:   '両隣攻撃',
+  nullify_adj:     '[隣効果無効中]',
+  nullify_own:     '[自陣無効中]',
+  field_equalize:  '均等化',
+  decay_immunity:  '腐敗耐性',
 };
 const KW_COLOR = {
-  sutemi:        '#cc0000',
-  shugo:         '#4080ff',
-  no_tribute:    '#808080',
-  no_attack:     '#888888',
-  dbl_tribute:   '#c0a000',
-  double_attack: '#b000b0',
-  nullify_adj:   '#20b0b0',
-  nullify_own:   '#20b0b0',
+  sutemi:          '#cc0000',
+  shugo:           '#4080ff',
+  no_tribute:      '#808080',
+  no_attack:       '#888888',
+  dbl_tribute:     '#c0a000',
+  double_attack:   '#b000b0',
+  nullify_adj:     '#20b0b0',
+  nullify_own:     '#20b0b0',
+  field_equalize:  '#a0c8ff',
+  decay_immunity:  '#80dd80',
 };
 
 function drawTable() {
@@ -529,10 +544,18 @@ function drawCards(nowMs) {
         card.keywords.forEach((kw, ki) => {
           let label = KW_JP[kw] ?? kw;
           let color = KW_COLOR[kw] ?? '#cc4444';
-          if (kw.startsWith('decay_')) {
+          if (kw.startsWith('decay_') && kw !== 'decay_immunity') {
             const n = kw.split('_')[1];
             label = `腐敗${n}`;
             color = '#5ccc44';
+          } else if (kw.startsWith('on_death_damage_')) {
+            const n = kw.split('_').pop();
+            label = `破壊時-${n}ダメ`;
+            color = '#a040ff';
+          } else if (kw.startsWith('solidarity_free_')) {
+            const n = kw.split('_').pop();
+            label = `連帯${n}:無料召喚`;
+            color = '#e0d060';
           }
           ctx.fillStyle = color;
           ctx.fillText(label, centerX, centerY + 50 + ki * 11);
