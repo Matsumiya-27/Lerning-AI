@@ -1134,6 +1134,70 @@ function drawCardDetailOverlay() {
 
   const fs = (v) => Math.round(v * scale);
 
+  const detailTopY = oy + fs(28);
+  const detailBottomY = top + OH - fs(12);
+
+  // 文章表示を省略せず、枠内で折り返しする
+  const drawWrappedRows = (rows, options = {}) => {
+    const {
+      center = false,
+      baseFontSize = fs(10),
+      minFontSize = fs(7),
+      lineHeightRatio = 1.35,
+      gap = fs(3),
+      xLeft = left + fs(8),
+      xCenter = ox,
+      maxWidth = OW - fs(16),
+      startY = detailTopY,
+      bottomY = detailBottomY,
+    } = options;
+
+    let fontSize = baseFontSize;
+    let prepared = [];
+    const normalizedRows = rows.filter((r) => r && r.text);
+    if (normalizedRows.length === 0) return;
+
+    while (fontSize >= minFontSize) {
+      prepared = [];
+      const lineH = Math.max(10, Math.round(fontSize * lineHeightRatio));
+      normalizedRows.forEach((row, idx) => {
+        ctx.font = `${row.bold ? 'bold ' : ''}${fontSize}px sans-serif`;
+        const lines = wrapTextChars(ctx, row.text, maxWidth);
+        lines.forEach((ln) => prepared.push({
+          text: ln,
+          color: row.color,
+          bold: row.bold,
+          lineH,
+          center,
+        }));
+        if (idx !== normalizedRows.length - 1) prepared.push({ spacer: true, h: gap });
+      });
+
+      const totalHeight = prepared.reduce((acc, it) => acc + (it.spacer ? it.h : it.lineH), 0);
+      if (startY + totalHeight <= bottomY) break;
+      fontSize -= 1;
+    }
+
+    let y = startY;
+    prepared.forEach((it) => {
+      if (it.spacer) {
+        y += it.h;
+        return;
+      }
+      ctx.fillStyle = it.color;
+      ctx.font = `${it.bold ? 'bold ' : ''}${fontSize}px sans-serif`;
+      if (it.center) {
+        ctx.textAlign = 'center';
+        ctx.fillText(it.text, xCenter, y);
+      } else {
+        ctx.textAlign = 'left';
+        ctx.fillText(it.text, xLeft, y);
+      }
+      y += it.lineH;
+    });
+    ctx.textAlign = 'left';
+  };
+
   if (isSpell) {
     ctx.fillStyle = '#a080ff';
     ctx.font = `bold ${fs(10)}px sans-serif`;
@@ -1144,15 +1208,16 @@ function drawCardDetailOverlay() {
     ctx.font = `bold ${fs(15)}px sans-serif`;
     ctx.fillText(`発動:${card.rank}`, ox, oy - fs(8));
 
-    ctx.fillStyle = '#ccccff';
-    ctx.font = `bold ${fs(10)}px sans-serif`;
-    const spellText = clipTextToWidth(ctx, SPELL_EFFECT_JP[card.effect] || card.effect || '─', OW - fs(10));
-    ctx.fillText(spellText, ox, oy + fs(12));
-
-    ctx.fillStyle = '#888899';
-    ctx.font = `${fs(9)}px sans-serif`;
-    ctx.fillText(card.type || 'テスト', ox, oy + fs(30));
-    ctx.textAlign = 'left';
+    drawWrappedRows([
+      { text: SPELL_EFFECT_JP[card.effect] || card.effect || '─', color: '#ccccff', bold: true },
+      { text: card.type || 'テスト', color: '#888899', bold: false },
+    ], {
+      center: true,
+      baseFontSize: fs(10),
+      minFontSize: fs(8),
+      startY: oy + fs(12),
+      maxWidth: OW - fs(12),
+    });
   } else {
     ctx.fillStyle = '#111111';
     ctx.font = `bold ${fs(12)}px sans-serif`;
@@ -1179,16 +1244,14 @@ function drawCardDetailOverlay() {
     const rightTextWidth = ctx.measureText(rightStr).width;
     ctx.fillText(rightStr, left + OW - fs(12) - rightTextWidth, oy + fs(7));
 
-    // 場カードと同じ情報量で拡大表示
-    const textMaxW = OW - fs(10);
-    ctx.font = `bold ${fs(10)}px sans-serif`;
-    ctx.textAlign = 'center';
+    const rows = [];
     if (card.effect) {
-      ctx.fillStyle = EFFECT_COLOR[card.effect] || '#888';
-      ctx.fillText(clipTextToWidth(ctx, EFFECT_JP[card.effect] || card.effect, textMaxW), ox, oy + fs(44));
-    } else if (card.effects && card.effects.length > 0) {
-      ctx.fillStyle = ATTR_COLOR[attrKey] ?? '#aaa';
-      ctx.fillText(clipTextToWidth(ctx, effectDisplayText(card.effects[0]), textMaxW), ox, oy + fs(38));
+      rows.push({ text: EFFECT_JP[card.effect] || card.effect, color: EFFECT_COLOR[card.effect] || '#888', bold: true });
+    }
+    if (card.effects && card.effects.length > 0) {
+      card.effects.forEach((eff) => {
+        rows.push({ text: effectDisplayText(eff), color: ATTR_COLOR[attrKey] ?? '#aaa', bold: false });
+      });
     }
     if (card.keywords && card.keywords.length > 0) {
       card.keywords.slice(0, 2).forEach((kw, ki) => {
@@ -1204,12 +1267,22 @@ function drawCardDetailOverlay() {
           label = `連帯${kw.split('_').pop()}:無料`;
           color = '#e0d060';
         }
-        ctx.fillStyle = color;
-        ctx.fillText(clipTextToWidth(ctx, label, textMaxW), ox, oy + fs(54 + ki * 11));
+        rows.push({ text: label, color, bold: true });
       });
     }
-    ctx.textAlign = 'left';
+    if (rows.length === 0) {
+      rows.push({ text: '(効果なし)', color: '#999', bold: false });
+    }
+
+    drawWrappedRows(rows, {
+      center: false,
+      baseFontSize: fs(10),
+      minFontSize: fs(7),
+      startY: oy + fs(38),
+      maxWidth: OW - fs(16),
+    });
   }
+
 
   ctx.restore();
 }
