@@ -87,6 +87,8 @@ export const gameState = {
   cycleSelection: null, // null | { owner, processNext, matchId }
   // 選択廃棄: プレイヤーが手札からn枚選んで捨てる待機状態
   handDiscardSelection: null, // null | { count, owner, processNext, matchId, selectedIds: [] }
+  // 単体対象効果: プレイヤーが対象1体を選ぶ待機状態
+  effectTargetSelection: null, // null | { owner, sourceCardId, candidateIds: [], effectLabel, effectPayload, processNext, matchId }
   // カード詳細オーバーレイ: 長押し中に表示するカード拡大表示
   cardDetailOverlay: null, // null | { cardId }
   fx: {
@@ -262,6 +264,11 @@ export function startMoveAnimation(card, toX, toY, onComplete) {
 }
 
 export function markCardDestroyed(card, nowMs) {
+  // 退場の発生源を問わず、場/手札から離れた事実をログに残す
+  const actorLabel = card.owner === 'player' ? 'あなた' : '相手';
+  const fromZone = card.zone === 'field' ? '場' : (card.zone === 'hand' ? '手札' : card.zone);
+  addBattleLogEntry(card.owner, `${actorLabel}の ${card.type} が${fromZone}から退場済みへ移動`);
+
   card.ui.destroyStartMs = nowMs;
   card.ui.destroyUntilMs = nowMs + DESTROY_ANIMATION_MS;
   card.ui.pendingRemoval = true;
@@ -359,6 +366,11 @@ export function getStealChoiceButtons() {
     left:  { x: 330, y: 400, width: 130, height: 44 },
     right: { x: 500, y: 400, width: 130, height: 44 },
   };
+}
+
+export function clearEffectTargetSelection() {
+  // 単体対象選択状態をまとめて解除するヘルパー
+  gameState.effectTargetSelection = null;
 }
 
 export function getDiscardPromptButtons() {

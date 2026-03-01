@@ -1052,6 +1052,35 @@ function drawHandDiscardSelection() {
   ctx.textAlign = 'left';
 }
 
+
+function drawEffectTargetSelectionOverlay() {
+  const sel = gameState.effectTargetSelection;
+  if (!sel) return;
+
+  // 暗転背景で選択対象を強調する
+  ctx.fillStyle = 'rgba(0,0,0,0.50)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  const candidates = sel.candidateIds
+    .map((id) => getCardById(id))
+    .filter(Boolean);
+
+  candidates.forEach((c) => {
+    ctx.strokeStyle = '#ffd24d';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(c.x - CARD_WIDTH / 2, c.y - CARD_HEIGHT / 2, CARD_WIDTH, CARD_HEIGHT);
+  });
+
+  ctx.fillStyle = '#fff7db';
+  ctx.font = 'bold 19px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`対象を選択してください（${sel.effectLabel}）`, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 10);
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = '#d8d8d8';
+  ctx.fillText('ハイライトされたカードをタップすると確定します', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 16);
+  ctx.textAlign = 'left';
+}
+
 function drawCycleSelectionOverlay() {
   if (!gameState.cycleSelection) return;
   // 暗転背景
@@ -1317,6 +1346,7 @@ export function draw(nowMs) {
   drawDiscardPrompt();
   drawHandDiscardSelection();
   drawCycleSelectionOverlay();
+  drawEffectTargetSelectionOverlay();
 
   drawCardDetailOverlay();
 

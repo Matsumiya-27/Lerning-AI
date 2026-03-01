@@ -14,6 +14,7 @@ import {
   triggerUsedCardFeedback, triggerScreenShake, addDamageText,
   triggerHpPulse, showBanner, getHpBadgePosition,
   getManaTotal, useMana, addBattleLogEntry,
+  clearEffectTargetSelection,
 } from './state.js';
 
 // ===== カードファクトリ =====
@@ -105,7 +106,9 @@ export function randomAttackPair(totalPower, maxSide) {
   };
 }
 
-export function drawRandomCardToHand(owner) {
+export function drawRandomCardToHand(owner, options = {}) {
+  // ログ制御: 初期配布などでは不要なログを抑制できるようにする
+  const { shouldLog = true, reason = 'ドロー' } = options;
   const handCards = getHandCards(owner);
   const handIndex = handCards.length;
   const center = getHandCenter(owner, handIndex, handIndex + 1);
@@ -139,6 +142,11 @@ export function drawRandomCardToHand(owner) {
   });
   gameState.nextCardId += 1;
   gameState.cards.push(card);
+  if (shouldLog) {
+    // どのイベントで手札に加わったかを戦闘ログに残す
+    const actorLabel = owner === 'player' ? 'あなた' : '相手';
+    addBattleLogEntry(owner, `${actorLabel}が ${card.type} を手札に追加（${reason}）`);
+  }
 }
 
 export function buildInitialCards() {
@@ -149,8 +157,9 @@ export function buildInitialCards() {
   });
 
   for (let i = 0; i < STARTING_HAND; i += 1) {
-    drawRandomCardToHand('player');
-    drawRandomCardToHand('enemy');
+    // 初期手札の配布は対戦ログを過剰にしないため非表示
+    drawRandomCardToHand('player', { shouldLog: false });
+    drawRandomCardToHand('enemy', { shouldLog: false });
   }
 
   // 初期手札の座標を4枚レイアウトへ正規化
@@ -239,6 +248,8 @@ export function applyTributeByIds(cardIds) {
     if (!tribute || tribute.zone !== 'field') {
       return;
     }
+    // 生贄で場を離れた事実を明示ログ化
+    addBattleLogEntry(tribute.owner, `${tribute.type} が生贄で場を離れました`);
     markCardDestroyed(tribute, nowMs);
   });
 }
@@ -372,6 +383,8 @@ export function cancelSummonSelection() {
 export function performSummon(card, targetSlot, tributeIds) {
   const matchIdAtStart = gameState.matchId;
   const actorLabel = card.owner === 'player' ? 'あなた' : '相手';
+  // 召喚処理の起点を明示し、以降の効果ログと紐付けやすくする
+  addBattleLogEntry(card.owner, `${actorLabel}が手札から ${card.type} の召喚を宣言`);
   applyTributeByIds(tributeIds);
   startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
     card.zone = 'field';
@@ -495,6 +508,8 @@ export function performOverrideSummon(card, targetSlot) {
 
   const occupant = getCardById(targetSlot.occupiedByCardId);
   if (occupant) {
+    // 上書き除去の発生を履歴に残す
+    addBattleLogEntry(card.owner, `${occupant.type} を上書き召喚で退場させました`);
     markCardDestroyed(occupant, nowMs);
     addDamageText(targetSlot.x, targetSlot.y - 60, 'OVERRIDE!', '#ffd470');
     triggerScreenShake(4, 120);
@@ -511,6 +526,7 @@ export function performOverrideSummon(card, targetSlot) {
       card.fieldSlotIndex = targetSlot.id;
       card.combat.summonedThisTurn = false; // 召喚ターンの直接攻撃制限なし
       targetSlot.occupiedByCardId = card.id;
+      addBattleLogEntry(card.owner, `${card.owner === 'player' ? 'あなた' : '相手'}が手札から ${card.type} を上書き召喚`);
       reflowHand(card.owner);
       applyBoardEffects();
       // checkStateBased はここでは呼ばない（colorScale X/X カード保護）
@@ -1099,6 +1115,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
     }
     const eff = effects[idx];
     idx += 1;
+    // 効果の解決開始を必ず戦闘ログへ記録する
+    addBattleLogEntry(owner, `${card.type} の効果処理: ${getEffectLogText(eff)}`);
 
     switch (eff.type) {
       case 'adjEnemy': {
@@ -1112,7 +1130,21 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
           if (c && c.owner === opponent) candidates.push(c);
         });
         if (candidates.length === 0) { processNext(); return; }
-        performSpecialAttack(candidates, eff.l, eff.r, matchIdAtStart, processNext);
+        if (owner === 'player' && candidates.length > 1) {
+          // プレイヤーの単体対象は選択式にする
+          gameState.effectTargetSelection = {
+            owner,
+            sourceCardId: card.id,
+            candidateIds: candidates.map((c) => c.id),
+            effectLabel: '隣接する敵1体',
+            effectPayload: { l: eff.l, r: eff.r },
+            processNext,
+            matchId: matchIdAtStart,
+          };
+          return;
+        }
+        const autoTarget = owner === 'player' ? candidates[0] : pickLowestLeftAttack(candidates);
+        performSpecialAttack([autoTarget], eff.l, eff.r, matchIdAtStart, processNext);
         return;
       }
       case 'anyEnemy': {
@@ -1120,7 +1152,20 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
         const opponent = owner === 'player' ? 'enemy' : 'player';
         const enemies = getFieldCards(opponent);
         if (enemies.length === 0) { processNext(); return; }
-        const target = enemies.slice().sort((a, b) => a.combat.attackLeft - b.combat.attackLeft)[0];
+        if (owner === 'player' && enemies.length > 1) {
+          // プレイヤーの単体対象は選択式にする
+          gameState.effectTargetSelection = {
+            owner,
+            sourceCardId: card.id,
+            candidateIds: enemies.map((c) => c.id),
+            effectLabel: '敵1体',
+            effectPayload: { l: eff.l, r: eff.r },
+            processNext,
+            matchId: matchIdAtStart,
+          };
+          return;
+        }
+        const target = owner === 'player' ? enemies[0] : pickLowestLeftAttack(enemies);
         performSpecialAttack([target], eff.l, eff.r, matchIdAtStart, processNext);
         return;
       }
@@ -1234,7 +1279,7 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
       case 'draw': {
         // カードを count 枚ドロー
         for (let i = 0; i < eff.count; i += 1) {
-          drawRandomCardToHand(owner);
+          drawRandomCardToHand(owner, { shouldLog: true, reason: `効果ドロー${i + 1}` });
         }
         reflowHand(owner);
         applyHandCardPreviews();
@@ -1243,7 +1288,7 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
       }
       case 'cycle': {
         // 1枚ドローした後、手札1枚をデッキ底に返却（プレイヤーは選択式、AIは自動）
-        drawRandomCardToHand(owner);
+        drawRandomCardToHand(owner, { shouldLog: true, reason: '循環ドロー' });
         reflowHand(owner);
         applyHandCardPreviews();
 
@@ -1375,6 +1420,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
               attribute: ct?.attribute ?? null,
             });
             gameState.mana[owner][colorKey] += rankVal;
+            // 豊穣でデッキトップを退場に送った履歴を記録
+            addBattleLogEntry(owner, `${ct?.type ?? '不明カード'} を豊穣で退場にしました`);
           }
         }
         addDamageText(card.x, card.y - 60, `豊穣${toMill}`, '#ccffaa');
@@ -1462,13 +1509,70 @@ function drawSpecificCardToHand(owner, typeId) {
   });
   gameState.nextCardId += 1;
   gameState.cards.push(card);
+  // リクルートなどの特殊入手もログへ記録
+  addBattleLogEntry(owner, `${owner === 'player' ? 'あなた' : '相手'}が ${card.type} を手札に加えました`);
 }
 
 // カードをデッキ底に返却する（循環効果用、墓地・マナ積算なし）
 export function returnCardToDeckBottom(card, owner) {
   const pile = owner === 'player' ? gameState.playerDeckPile : gameState.enemyDeckPile;
   if (card.typeId) pile.unshift({ typeId: card.typeId });
+  // 循環や効果でデッキへ戻した履歴を明示
+  addBattleLogEntry(owner, `${card.type} をデッキ下に戻しました`);
   markCardReturned(card, performance.now());
+}
+
+function pickLowestLeftAttack(candidates) {
+  // AI用: 現行仕様を維持し、LA最小を優先対象にする
+  return candidates.slice().sort((a, b) => a.combat.attackLeft - b.combat.attackLeft)[0];
+}
+
+function getEffectLogText(eff) {
+  // 戦闘ログ向けに効果テキストを簡易整形する
+  if (!eff || !eff.type) return '不明な効果';
+  switch (eff.type) {
+    case 'adjEnemy': return `隣接敵1体に ${eff.l}/${eff.r}`;
+    case 'anyEnemy': return `敵1体に ${eff.l}/${eff.r}`;
+    case 'aoeExSelf': return `自身以外全体に ${eff.l}/${eff.r}`;
+    case 'adjAll': return `両隣に ${eff.l}/${eff.r}`;
+    case 'manaGate': return `マナ${eff.cost}支払いで追加効果`;
+    case 'playerDamage': return `相手プレイヤーに${eff.amount}ダメージ`;
+    case 'boostSelf': return `自身を +${eff.l}/+${eff.r}`;
+    case 'draw': return `${eff.count}枚ドロー`;
+    case 'cycle': return '1枚引いて1枚戻す';
+    case 'recruit': return `${eff.tribe}をリクルート`;
+    case 'upgradeDa': return `DAを${eff.value}に強化`;
+    case 'nullifySelf': return '自身テキスト効果を解除';
+    case 'enableAura': return `${eff.aura}を有効化`;
+    case 'handDiscard': return `手札を${eff.count}枚廃棄`;
+    case 'bounty': return `豊穣${eff.count}`;
+    case 'solidarity': return `連帯${eff.count}判定`;
+    case 'boostAllOwn': return `味方全体を +${eff.l}/+${eff.r}`;
+    case 'tribeCountDamage': return `${eff.tribe}枚数分ダメージ`;
+    default: return eff.type;
+  }
+}
+
+export function confirmEffectTargetChoice(targetId) {
+  // 単体対象効果の選択確定処理
+  const sel = gameState.effectTargetSelection;
+  if (!sel || gameState.matchId !== sel.matchId) {
+    clearEffectTargetSelection();
+    return;
+  }
+  const source = getCardById(sel.sourceCardId);
+  const target = getCardById(targetId);
+  if (!source || !target || !sel.candidateIds.includes(targetId)) {
+    return;
+  }
+  clearEffectTargetSelection();
+  const payload = sel.effectPayload;
+  if (!payload) {
+    sel.processNext();
+    return;
+  }
+  addBattleLogEntry(sel.owner, `${source.type} の対象選択: ${target.type}`);
+  performSpecialAttack([target], payload.l, payload.r, sel.matchId, sel.processNext);
 }
 
 export function finishGame(winner) {
