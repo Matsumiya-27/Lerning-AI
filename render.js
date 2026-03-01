@@ -1105,120 +1105,154 @@ function drawCardDetailOverlay() {
 
   const attrKey = card.attribute ?? 'null';
   const isSpell = card.cardCategory === 'spell';
+  const scale = OW / CARD_WIDTH;
 
   ctx.save();
 
-  // カード背景 + 影代わりの外枠
+  // 影 + カード本体（場のカードと同じ見た目を維持して単純拡大）
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = 8;
   ctx.strokeRect(left, top, OW, OH);
 
-  ctx.fillStyle = isSpell ? '#180e38' : '#f0f4ff';
+  ctx.fillStyle = isSpell ? '#1e1040' : '#ffffff';
   ctx.fillRect(left, top, OW, OH);
   if (!isSpell) {
-    ctx.fillStyle = ATTR_COLOR[attrKey] ?? ATTR_COLOR.null;
-    ctx.globalAlpha = 0.13;
+    const ac = ATTR_COLOR[attrKey] ?? ATTR_COLOR.null;
+    ctx.fillStyle = ac;
+    ctx.globalAlpha = 0.16;
     ctx.fillRect(left, top, OW, OH);
     ctx.globalAlpha = 1;
   }
-  ctx.strokeStyle = isSpell ? '#8060ff' : (ATTR_BORDER[attrKey] ?? ATTR_BORDER.null);
+  ctx.strokeStyle = isSpell ? '#5030a0' : (ATTR_BORDER[attrKey] ?? ATTR_BORDER.null);
   ctx.lineWidth = 3;
   ctx.strokeRect(left, top, OW, OH);
 
-  // テキストをカード内にクリップ
+  // テキストがカード枠外にはみ出ないようクリップ
   ctx.beginPath();
-  ctx.rect(left + 1, top + 1, OW - 2, OH - 2);
+  ctx.rect(left, top, OW, OH);
   ctx.clip();
 
-  const LP = left + 12;
-  const textMaxW = OW - 24;
-  let TY = top + 18;
+  const fs = (v) => Math.round(v * scale);
+
+  const detailTopY = oy + fs(28);
+  const detailBottomY = top + OH - fs(12);
+
+  // 文章表示を省略せず、枠内で折り返しする
+  const drawWrappedRows = (rows, options = {}) => {
+    const {
+      center = false,
+      baseFontSize = fs(10),
+      minFontSize = fs(7),
+      lineHeightRatio = 1.35,
+      gap = fs(3),
+      xLeft = left + fs(8),
+      xCenter = ox,
+      maxWidth = OW - fs(16),
+      startY = detailTopY,
+      bottomY = detailBottomY,
+    } = options;
+
+    let fontSize = baseFontSize;
+    let prepared = [];
+    const normalizedRows = rows.filter((r) => r && r.text);
+    if (normalizedRows.length === 0) return;
+
+    while (fontSize >= minFontSize) {
+      prepared = [];
+      const lineH = Math.max(10, Math.round(fontSize * lineHeightRatio));
+      normalizedRows.forEach((row, idx) => {
+        ctx.font = `${row.bold ? 'bold ' : ''}${fontSize}px sans-serif`;
+        const lines = wrapTextChars(ctx, row.text, maxWidth);
+        lines.forEach((ln) => prepared.push({
+          text: ln,
+          color: row.color,
+          bold: row.bold,
+          lineH,
+          center,
+        }));
+        if (idx !== normalizedRows.length - 1) prepared.push({ spacer: true, h: gap });
+      });
+
+      const totalHeight = prepared.reduce((acc, it) => acc + (it.spacer ? it.h : it.lineH), 0);
+      if (startY + totalHeight <= bottomY) break;
+      fontSize -= 1;
+    }
+
+    let y = startY;
+    prepared.forEach((it) => {
+      if (it.spacer) {
+        y += it.h;
+        return;
+      }
+      ctx.fillStyle = it.color;
+      ctx.font = `${it.bold ? 'bold ' : ''}${fontSize}px sans-serif`;
+      if (it.center) {
+        ctx.textAlign = 'center';
+        ctx.fillText(it.text, xCenter, y);
+      } else {
+        ctx.textAlign = 'left';
+        ctx.fillText(it.text, xLeft, y);
+      }
+      y += it.lineH;
+    });
+    ctx.textAlign = 'left';
+  };
 
   if (isSpell) {
-    ctx.textAlign = 'center';
     ctx.fillStyle = '#a080ff';
-    ctx.font = 'bold 15px sans-serif';
-    ctx.fillText('スペル', ox, TY); TY += 26;
+    ctx.font = `bold ${fs(10)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.fillText('スペル', ox, top + fs(14));
 
     ctx.fillStyle = '#ffdd88';
-    ctx.font = 'bold 22px sans-serif';
-    ctx.fillText(`発動:${card.rank}`, ox, TY); TY += 32;
+    ctx.font = `bold ${fs(15)}px sans-serif`;
+    ctx.fillText(`発動:${card.rank}`, ox, oy - fs(8));
 
-    ctx.fillStyle = '#ccccff';
-    ctx.font = '14px sans-serif';
-    const spellText = SPELL_EFFECT_JP[card.effect] || card.effect || '─';
-    wrapTextChars(ctx, spellText, textMaxW).forEach((ln) => { ctx.fillText(ln, ox, TY); TY += 18; });
-    TY += 4;
-
-    ctx.fillStyle = '#888899';
-    ctx.font = '11px sans-serif';
-    ctx.fillText(card.type || 'テスト', ox, TY);
-    ctx.textAlign = 'left';
+    drawWrappedRows([
+      { text: SPELL_EFFECT_JP[card.effect] || card.effect || '─', color: '#ccccff', bold: true },
+      { text: card.type || 'テスト', color: '#888899', bold: false },
+    ], {
+      center: true,
+      baseFontSize: fs(10),
+      minFontSize: fs(8),
+      startY: oy + fs(12),
+      maxWidth: OW - fs(12),
+    });
   } else {
-    // ヘッダー行: ランク | 属性
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#111';
-    ctx.font = 'bold 17px sans-serif';
-    ctx.fillText(`RANK ${card.rank}`, LP, TY);
+    ctx.fillStyle = '#111111';
+    ctx.font = `bold ${fs(12)}px sans-serif`;
+    ctx.fillText(`RANK ${card.rank}`, left + fs(10), top + fs(18));
+
+    ctx.font = `${fs(9)}px sans-serif`;
+    ctx.fillStyle = '#555555';
+    ctx.fillText(card.type || 'テスト', left + fs(10), top + fs(30));
 
     ctx.textAlign = 'right';
+    ctx.font = `${fs(9)}px sans-serif`;
     ctx.fillStyle = ATTR_COLOR[attrKey] ?? ATTR_COLOR.null;
-    ctx.font = 'bold 14px sans-serif';
-    ctx.fillText(ATTR_JP[attrKey] ?? '無', left + OW - 12, TY);
+    ctx.fillText(ATTR_JP[attrKey] ?? '無', left + OW - fs(6), top + fs(14));
     ctx.textAlign = 'left';
-    TY += 20;
 
-    // 種族
-    ctx.fillStyle = '#555';
-    ctx.font = '12px sans-serif';
-    ctx.fillText(card.type || 'テスト', LP, TY); TY += 16;
+    ctx.font = `bold ${fs(20)}px sans-serif`;
+    const leftDebuffed = card.combat.baseAttackLeft !== undefined && card.combat.attackLeft < card.combat.baseAttackLeft;
+    const rightDebuffed = card.combat.baseAttackRight !== undefined && card.combat.attackRight < card.combat.baseAttackRight;
+    ctx.fillStyle = leftDebuffed ? '#e07020' : '#174f9b';
+    ctx.fillText(String(card.combat.attackLeft), left + fs(10), oy + fs(7));
 
-    // 区切り線
-    ctx.strokeStyle = '#ccc';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(left + 8, TY + 2); ctx.lineTo(left + OW - 8, TY + 2); ctx.stroke();
-    TY += 12;
+    ctx.fillStyle = rightDebuffed ? '#e07020' : '#9b1f1f';
+    const rightStr = String(card.combat.attackRight);
+    const rightTextWidth = ctx.measureText(rightStr).width;
+    ctx.fillText(rightStr, left + OW - fs(12) - rightTextWidth, oy + fs(7));
 
-    // 攻撃値
-    ctx.textAlign = 'left';
-    ctx.font = 'bold 32px sans-serif';
-    ctx.fillStyle = '#174f9b';
-    ctx.fillText(String(card.combat.attackLeft), LP, TY + 8);
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#9b1f1f';
-    ctx.fillText(String(card.combat.attackRight), left + OW - 12, TY + 8);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#888';
-    ctx.font = '20px sans-serif';
-    ctx.fillText('/', ox, TY + 8);
-    ctx.textAlign = 'left';
-    TY += 38;
-
-    // 区切り線
-    ctx.strokeStyle = '#ccc';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(left + 8, TY + 2); ctx.lineTo(left + OW - 8, TY + 2); ctx.stroke();
-    TY += 12;
-
-    // 旧 effect 文字列
+    const rows = [];
     if (card.effect) {
-      ctx.fillStyle = EFFECT_COLOR[card.effect] || '#555';
-      ctx.font = 'bold 13px sans-serif';
-      wrapTextChars(ctx, EFFECT_JP[card.effect] || card.effect, textMaxW).forEach((ln) => { ctx.fillText(ln, LP, TY); TY += 17; });
-      TY += 3;
+      rows.push({ text: EFFECT_JP[card.effect] || card.effect, color: EFFECT_COLOR[card.effect] || '#888', bold: true });
     }
-
-    // 新 effects 配列
     if (card.effects && card.effects.length > 0) {
       card.effects.forEach((eff) => {
-        ctx.fillStyle = ATTR_COLOR[attrKey] ?? '#555';
-        ctx.font = '12px sans-serif';
-        wrapTextChars(ctx, effectDisplayText(eff), textMaxW).forEach((ln) => { ctx.fillText(ln, LP, TY); TY += 16; });
-        TY += 3;
+        rows.push({ text: effectDisplayText(eff), color: ATTR_COLOR[attrKey] ?? '#aaa', bold: false });
       });
     }
-
-    // キーワード（全件表示）
     if (card.keywords && card.keywords.length > 0) {
       card.keywords.forEach((kw) => {
         let label = KW_JP[kw] ?? kw;
@@ -1230,38 +1264,25 @@ function drawCardDetailOverlay() {
           label = `破壊時-${kw.split('_').pop()}ダメ`;
           color = '#a040ff';
         } else if (kw.startsWith('solidarity_free_')) {
-          label = `連帯${kw.split('_').pop()}:無料召喚`;
+          label = `連帯${kw.split('_').pop()}:無料`;
           color = '#e0d060';
         }
-        ctx.fillStyle = color;
-        ctx.font = 'bold 13px sans-serif';
-        wrapTextChars(ctx, label, textMaxW).forEach((ln) => { ctx.fillText(ln, LP, TY); TY += 17; });
+        rows.push({ text: label, color, bold: true });
       });
     }
-
-    // 効果なし
-    if (!card.effect && (!card.effects || card.effects.length === 0) && (!card.keywords || card.keywords.length === 0)) {
-      ctx.fillStyle = '#999';
-      ctx.font = '12px sans-serif';
-      ctx.fillText('(効果なし)', LP, TY); TY += 16;
+    if (rows.length === 0) {
+      rows.push({ text: '(効果なし)', color: '#999', bold: false });
     }
 
-    // USED/READY
-    if (card.zone === 'field') {
-      const actedText  = card.combat.hasActedThisTurn ? 'USED' : 'READY';
-      const actedColor = card.combat.hasActedThisTurn ? '#999' : '#444';
-      ctx.fillStyle = actedColor;
-      ctx.font = '11px sans-serif';
-      ctx.fillText(actedText, LP, top + OH - 14);
-    }
+    drawWrappedRows(rows, {
+      center: false,
+      baseFontSize: fs(10),
+      minFontSize: fs(7),
+      startY: oy + fs(38),
+      maxWidth: OW - fs(16),
+    });
   }
 
-  // ヒントテキスト
-  ctx.fillStyle = 'rgba(100,120,160,0.75)';
-  ctx.font = '10px sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText('ホールドで詳細', left + OW - 8, top + OH - 6);
-  ctx.textAlign = 'left';
 
   ctx.restore();
 }
