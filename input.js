@@ -16,6 +16,7 @@ import {
   confirmOfferingChoice, confirmStealChoice,
   canActivateSpell, activateSpellEffect,
   returnCardToDeckBottom,
+  confirmEffectTargetChoice,
 } from './cards.js';
 import { endCurrentTurn, confirmDiscardPrompt } from './turn.js';
 
@@ -136,6 +137,24 @@ export function onPointerDown(event) {
       }
     }
     return; // handDiscardSelection 中は他の操作を受け付けない
+  }
+
+
+  // 単体対象効果の選択オーバーレイ
+  if (gameState.effectTargetSelection) {
+    const sel = gameState.effectTargetSelection;
+    if (gameState.matchId !== sel.matchId) {
+      gameState.effectTargetSelection = null;
+      return;
+    }
+    const hit = gameState.cards.find(
+      (c) => sel.candidateIds.includes(c.id) && c.zone === 'field' && !c.ui.pendingRemoval
+        && pointInCard(point.x, point.y, c),
+    );
+    if (hit) {
+      confirmEffectTargetChoice(hit.id);
+    }
+    return;
   }
 
   // offering 選択オーバーレイ
