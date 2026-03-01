@@ -1254,7 +1254,7 @@ function drawCardDetailOverlay() {
       });
     }
     if (card.keywords && card.keywords.length > 0) {
-      card.keywords.forEach((kw) => {
+      card.keywords.slice(0, 2).forEach((kw, ki) => {
         let label = KW_JP[kw] ?? kw;
         let color = KW_COLOR[kw] ?? '#cc4444';
         if (kw.startsWith('decay_') && kw !== 'decay_immunity') {
