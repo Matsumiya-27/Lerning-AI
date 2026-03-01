@@ -9,7 +9,7 @@ import {
 import {
   gameState, slotCenters, showBanner,
   reflowHand, getHandCards, getFieldCards,
-  markCardDestroyed,
+  markCardDestroyed, addBattleLogEntry, clearBattleLog,
 } from './state.js';
 import {
   drawRandomCardToHand, buildInitialCards,
@@ -42,6 +42,11 @@ export function applyDrawPhase(owner) {
     drawRandomCardToHand(owner);
     if (getHandCards(owner).length === countBefore) break; // デッキ切れ（安全弁）
   }
+
+  const drawnCount = getHandCards(owner).length - handCountAtStart;
+  if (drawnCount > 0) {
+    addBattleLogEntry(owner, `${owner === 'player' ? 'あなた' : '相手'}が ${drawnCount} 枚ドロー`);
+  }
   reflowHand(owner);
 }
 
@@ -65,6 +70,8 @@ export function beginMainPhase(owner) {
   gameState.turn.phase = 'main';
   gameState.turn.mainPhaseStartedAtMs = nowMs;
   clearActedFlags(owner);
+
+  addBattleLogEntry('system', `TURN ${gameState.turn.number} / ${owner === 'player' ? 'PLAYER' : 'ENEMY'}`);
 
   if (owner === 'player') {
     gameState.turn.enemyAutoEndAtMs = 0;
@@ -194,6 +201,8 @@ export function startCoinToss() {
 
 export function resetGame() {
   gameState.matchId += 1;
+  clearBattleLog();
+  addBattleLogEntry('system', '新しい対戦を開始しますわ。');
   // プレイヤーのデッキ山を再構築（シャッフルして積み直す）
   gameState.playerDeckPile = shuffleDeck();
   // 敵のデッキ山はサンプルデッキをシャッフルして使用

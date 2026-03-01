@@ -98,6 +98,7 @@
         display: flex;
         flex-direction: column;
         gap: 10px;
+        width: min(260px, 32vw);
       }
       button {
         cursor: pointer;
@@ -119,7 +120,48 @@
       .note {
         font-size: 12px;
         color: #b8c2d9;
-        max-width: 170px;
+        max-width: 100%;
+      }
+      .battle-log {
+        border: 1px solid #3c4863;
+        border-radius: 8px;
+        background: #111a2a;
+        min-height: 190px;
+        max-height: 280px;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .battle-log-title {
+        padding: 8px 10px;
+        border-bottom: 1px solid #2f3d58;
+        font-size: 12px;
+        font-weight: bold;
+        letter-spacing: 0.02em;
+        color: #d5def1;
+      }
+      .battle-log-list {
+        margin: 0;
+        padding: 8px 10px;
+        list-style: none;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+      .battle-log-list li {
+        color: #c6d2eb;
+      }
+      .battle-log-list li.player {
+        color: #79bcff;
+      }
+      .battle-log-list li.enemy {
+        color: #ff9a9a;
+      }
+      .battle-log-list li.system {
+        color: #ffe08a;
       }
       .hand-edit-wrap {
         display: flex;
@@ -471,6 +513,10 @@
             </select>
           </div>
           <div class="note">プレイヤーMainで行動。右中央の丸いEND TURNで終了。場カードを上スワイプで直接攻撃（先攻1ターン目は不可）。</div>
+          <div class="battle-log" aria-live="polite">
+            <div class="battle-log-title">バトルログ（検証用）</div>
+            <ul id="battleLogList" class="battle-log-list"></ul>
+          </div>
         </div>
       </div>
     </div>

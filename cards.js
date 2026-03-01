@@ -13,7 +13,7 @@ import {
   startMoveAnimation, markCardDestroyed, markCardReturned, recomputeSlotOccupancy,
   triggerUsedCardFeedback, triggerScreenShake, addDamageText,
   triggerHpPulse, showBanner, getHpBadgePosition,
-  getManaTotal, useMana,
+  getManaTotal, useMana, addBattleLogEntry,
 } from './state.js';
 
 // ===== カードファクトリ =====
@@ -371,6 +371,7 @@ export function cancelSummonSelection() {
 // 召喚実行の共通処理（オーバーレイ経由・直接経由どちらからも呼ぶ）
 export function performSummon(card, targetSlot, tributeIds) {
   const matchIdAtStart = gameState.matchId;
+  const actorLabel = card.owner === 'player' ? 'あなた' : '相手';
   applyTributeByIds(tributeIds);
   startMoveAnimation(card, targetSlot.x, targetSlot.y, () => {
     card.zone = 'field';
@@ -378,6 +379,7 @@ export function performSummon(card, targetSlot, tributeIds) {
     card.fieldSlotIndex = targetSlot.id;
     card.combat.summonedThisTurn = false; // 召喚ターンの直接攻撃制限なし
     targetSlot.occupiedByCardId = card.id;
+    addBattleLogEntry(card.owner, `${actorLabel}が ${card.type} をスロット${targetSlot.id + 1}に召喚`);
     reflowHand(card.owner);
     gameState.summonSelection.active = false;
     gameState.summonSelection.preselectedIds = [];
@@ -698,6 +700,12 @@ export function resolveSwipeAttack(attacker, direction) {
 
   const attackerLost = destroyedCards.includes(attacker);
   const defenderLost = destroyedCards.includes(defender);
+
+  const ownerLabel = attacker.owner === 'player' ? 'あなた' : '相手';
+  const battleResult = attackerLost && defenderLost
+    ? '相打ち'
+    : (defenderLost ? '撃破' : '返り討ち');
+  addBattleLogEntry(attacker.owner, `${ownerLabel}の ${attacker.type} が${direction === 'left' ? '左' : '右'}攻撃 → ${battleResult}`);
 
   // 生き残ったカードへの一時攻撃力減算（そのターン中のみ）
   // 攻撃側が負けた（defender が生存）: defender の攻撃に使った方向を攻撃側の攻撃力分だけ減算
@@ -1465,6 +1473,7 @@ export function returnCardToDeckBottom(card, owner) {
 
 export function finishGame(winner) {
   gameState.result.winner = winner;
+  addBattleLogEntry('system', `${winner === 'player' ? 'あなた' : '相手'}の勝利ですわ！`);
   gameState.interactionLock = true;
   gameState.fx.koFlashUntilMs = performance.now() + 900;
   triggerScreenShake(14, 500);
@@ -1513,8 +1522,11 @@ export function resolveDirectAttack(attacker) {
   }
 
   const selfDamage = attacker.effect === 'doubleblade' ? directDamage : 0;
+  const attackerLabel = attacker.owner === 'player' ? 'あなた' : '相手';
+  const targetLabel = targetOwner === 'player' ? 'あなた' : '相手';
 
   attacker.combat.hasActedThisTurn = true;
+  addBattleLogEntry(attacker.owner, `${attackerLabel}の ${attacker.type} が直接攻撃（${targetLabel}に${directDamage}ダメージ）`);
   attacker.ui.hitFlashUntilMs = performance.now() + HIT_FLASH_MS;
   gameState.interactionLock = true;
 

@@ -8,6 +8,7 @@ import {
 export const canvas = document.getElementById('game');
 export const ctx = canvas.getContext('2d');
 export const resetButton = document.getElementById('resetButton');
+export const battleLogList = document.getElementById('battleLogList');
 
 // ===== レイアウト =====
 export const slotCenters = [140, 280, 420, 560, 700].map((x, index) => ({
@@ -65,6 +66,7 @@ export const gameState = {
   result: {
     winner: null,
   },
+  battleLog: [],
   // offering効果: 召喚時に相手へ譲渡するか選択するオーバーレイ
   offeringChoice: {
     active: false,
@@ -123,6 +125,35 @@ export const gameState = {
     mainPhaseStartedAtMs: 0,
   },
 };
+
+const MAX_BATTLE_LOG_ENTRIES = 28;
+
+function renderBattleLog() {
+  if (!battleLogList) {
+    return;
+  }
+  battleLogList.innerHTML = '';
+  gameState.battleLog.forEach((entry) => {
+    const li = document.createElement('li');
+    li.className = entry.owner;
+    li.textContent = entry.text;
+    battleLogList.appendChild(li);
+  });
+  battleLogList.scrollTop = battleLogList.scrollHeight;
+}
+
+export function clearBattleLog() {
+  gameState.battleLog = [];
+  renderBattleLog();
+}
+
+export function addBattleLogEntry(owner, text) {
+  gameState.battleLog.push({ owner, text });
+  if (gameState.battleLog.length > MAX_BATTLE_LOG_ENTRIES) {
+    gameState.battleLog.splice(0, gameState.battleLog.length - MAX_BATTLE_LOG_ENTRIES);
+  }
+  renderBattleLog();
+}
 
 // ===== FX ヘルパー =====
 
