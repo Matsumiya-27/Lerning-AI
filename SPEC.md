@@ -168,3 +168,20 @@
    - 生贄・破壊・上書きなどでカードが場/手札を離れるイベントを記録する。
    - 効果によるドロー、デッキ下への返却、豊穣による退場送りなど、効果由来のゾーン移動を記録する。
    - ログ上限は既存仕様のまま、古いログから順にローテーションする。
+
+## 11. 非同期演出シーケンス統一（2026-03 更新）
+1. Promiseベース演出ユーティリティ
+   - `cards.js` に `animateDrawToHand(owner, options): Promise<void>` を追加し、ドロー処理を逐次 await 可能にした。
+   - `cards.js` に `animateDestroy(card): Promise<void>` を追加し、既存 `markCardDestroyed` を待機付きで利用可能にした。
+
+2. 召喚時効果の逐次解決
+   - `dispatchSummonEffects` の `draw` / `handReset` / `cycle` は、即時ループではなく await による1枚ずつの演出へ統一した。
+   - 各 await 後に `matchId` ガードを適用し、対戦リセット時の途中反映を防止した。
+
+3. ターン開始ドローの時系列整合
+   - `turn.js` の `applyDrawPhase` を async 化し、必要枚数のドローを1枚ずつ await で解決するよう変更した。
+   - ターン開始ログ・ドロー表示・メインフェーズ遷移の時系列を一致させた。
+
+4. interactionLock の解除タイミング
+   - ドローフェーズ中は `interactionLock = true` を維持し、最後のドロー演出完了後にメインフェーズへ遷移して解除する。
+   - 召喚時効果でも最終演出完了後にのみロック解除される流れに統一した。

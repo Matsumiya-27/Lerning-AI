@@ -149,6 +149,37 @@ export function drawRandomCardToHand(owner, options = {}) {
   }
 }
 
+// 非同期処理を直列化するための待機ユーティリティ
+function waitMs(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+// ドロー演出をPromise化し、解決順と見た目の順序を一致させる
+export async function animateDrawToHand(owner, options = {}) {
+  const {
+    shouldLog = true,
+    reason = 'ドロー',
+    waitAfterMs = 120,
+  } = options;
+  drawRandomCardToHand(owner, { shouldLog, reason });
+  reflowHand(owner);
+  applyHandCardPreviews();
+  if (waitAfterMs > 0) {
+    await waitMs(waitAfterMs);
+  }
+}
+
+// 既存のmarkCardDestroyedを待機可能にするラッパ
+export async function animateDestroy(card) {
+  if (!card || card.ui.pendingRemoval) {
+    return;
+  }
+  markCardDestroyed(card, performance.now());
+  await waitMs(DESTROY_ANIMATION_MS + 30);
+}
+
 export function buildInitialCards() {
   gameState.cards = [];
   gameState.nextCardId = 0;
@@ -1087,7 +1118,7 @@ export function checkStateBased() {
 
 // ===== 召喚時効果ディスパッチャ =====
 
-function dispatchSummonEffects(card, owner, matchIdAtStart) {
+async function dispatchSummonEffects(card, owner, matchIdAtStart) {
   // effectsNullified: 効果テキストが無効化されている場合はスキップ
   if (card.ui.effectsNullified) {
     checkStateBased();
@@ -1105,7 +1136,7 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
   // 効果を順次処理（非同期効果は processNext コールバックで連鎖）
   let idx = 0;
 
-  function processNext() {
+  async function processNext() {
     if (gameState.matchId !== matchIdAtStart) return;
     if (idx >= effects.length) {
       applyBoardEffects();
@@ -1234,17 +1265,17 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
       }
       case 'handReset': {
         // 自分の手札を全破棄してから draw 枚ドロー
-        const nowMs = performance.now();
-        getHandCards(owner).forEach((c) => markCardDestroyed(c, nowMs));
-        setTimeout(() => {
+        // 破棄もドローも1枚ずつ完了待ちにして、表示順と解決順を一致させる
+        const handCards = getHandCards(owner);
+        for (const handCard of handCards) {
+          await animateDestroy(handCard);
           if (gameState.matchId !== matchIdAtStart) return;
-          for (let i = 0; i < eff.draw; i += 1) {
-            drawRandomCardToHand(owner);
-          }
-          reflowHand(owner);
-          applyHandCardPreviews();
-          processNext();
-        }, DESTROY_ANIMATION_MS + 30);
+        }
+        for (let i = 0; i < eff.draw; i += 1) {
+          await animateDrawToHand(owner, { shouldLog: true, reason: `再補充ドロー${i + 1}` });
+          if (gameState.matchId !== matchIdAtStart) return;
+        }
+        processNext();
         return;
       }
       case 'colorScale': {
@@ -1277,20 +1308,18 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
         return;
       }
       case 'draw': {
-        // カードを count 枚ドロー
+        // カードを count 枚ドロー（1枚ずつ演出完了を待つ）
         for (let i = 0; i < eff.count; i += 1) {
-          drawRandomCardToHand(owner, { shouldLog: true, reason: `効果ドロー${i + 1}` });
+          await animateDrawToHand(owner, { shouldLog: true, reason: `効果ドロー${i + 1}` });
+          if (gameState.matchId !== matchIdAtStart) return;
         }
-        reflowHand(owner);
-        applyHandCardPreviews();
         processNext();
         return;
       }
       case 'cycle': {
         // 1枚ドローした後、手札1枚をデッキ底に返却（プレイヤーは選択式、AIは自動）
-        drawRandomCardToHand(owner, { shouldLog: true, reason: '循環ドロー' });
-        reflowHand(owner);
-        applyHandCardPreviews();
+        await animateDrawToHand(owner, { shouldLog: true, reason: '循環ドロー' });
+        if (gameState.matchId !== matchIdAtStart) return;
 
         if (owner === 'player') {
           // プレイヤー: 選択オーバーレイを表示して待機
@@ -1310,6 +1339,9 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
           });
           returnCardToDeckBottom(returnCard, owner);
           reflowHand(owner);
+          // 返却アニメーション完了まで待ってから次の効果へ進む
+          await waitMs(DESTROY_ANIMATION_MS + 30);
+          if (gameState.matchId !== matchIdAtStart) return;
         }
         processNext();
         return;
@@ -1478,7 +1510,7 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
     }
   }
 
-  processNext();
+  await processNext();
 }
 
 // デッキから特定 typeId のカードを手札に加える（recruit 等で使用）
