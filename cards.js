@@ -1128,28 +1128,41 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
     }
     const eff = effects[idx];
     idx += 1;
-    // 効果の解決開始を必ず戦闘ログへ記録する
-    addBattleLogEntry(owner, `${card.type} の効果処理: ${getEffectLogText(eff)}`);
+    // ログの接頭辞はカード名＋効果ラベルに統一し、本文は解決結果ベースで後段で組み立てる
+    const effectLabel = getEffectLogText(eff);
+    const logResult = (resultText) => {
+      addBattleLogEntry(owner, `${card.type} [${effectLabel}] ${resultText}`);
+    };
 
     switch (eff.type) {
       case 'adjEnemy': {
         // 隣接する敵1体に eff.l / eff.r のダメージ（順序保証: processNext をコールバックとして渡す）
         const slotIdx = card.fieldSlotIndex;
-        if (slotIdx === null) { processNext(); return; }
+        if (slotIdx === null) {
+          // フィールド不在時は対象探索不能として不発ログを残す
+          logResult('対象なし（場にいないため不発）');
+          processNext();
+          return;
+        }
         const opponent = owner === 'player' ? 'enemy' : 'player';
         const candidates = [];
         [-1, 1].forEach((d) => {
           const c = getCardAtSlot(slotIdx + d);
           if (c && c.owner === opponent) candidates.push(c);
         });
-        if (candidates.length === 0) { processNext(); return; }
+        if (candidates.length === 0) {
+          // 隣接候補ゼロは不発理由を明示
+          logResult('対象なし（隣接敵不在）');
+          processNext();
+          return;
+        }
         if (owner === 'player' && candidates.length > 1) {
           // プレイヤーの単体対象は選択式にする
           gameState.effectTargetSelection = {
             owner,
             sourceCardId: card.id,
             candidateIds: candidates.map((c) => c.id),
-            effectLabel: '隣接する敵1体',
+            effectLabel,
             effectPayload: { l: eff.l, r: eff.r },
             processNext,
             matchId: matchIdAtStart,
@@ -1157,6 +1170,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           return;
         }
         const autoTarget = owner === 'player' ? candidates[0] : pickLowestLeftAttack(candidates);
+        // 自動確定時は対象と値をログに残してから適用
+        logResult(`${autoTarget.type} に ${eff.l}/${eff.r} を適用`);
         performSpecialAttack([autoTarget], eff.l, eff.r, matchIdAtStart, processNext);
         return;
       }
@@ -1164,14 +1179,19 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         // 敵フィールドの LA 最小の1体に eff.l / eff.r のダメージ
         const opponent = owner === 'player' ? 'enemy' : 'player';
         const enemies = getFieldCards(opponent);
-        if (enemies.length === 0) { processNext(); return; }
+        if (enemies.length === 0) {
+          // 敵不在で対象を取れないケースを明示
+          logResult('対象なし（敵不在）');
+          processNext();
+          return;
+        }
         if (owner === 'player' && enemies.length > 1) {
           // プレイヤーの単体対象は選択式にする
           gameState.effectTargetSelection = {
             owner,
             sourceCardId: card.id,
             candidateIds: enemies.map((c) => c.id),
-            effectLabel: '敵1体',
+            effectLabel,
             effectPayload: { l: eff.l, r: eff.r },
             processNext,
             matchId: matchIdAtStart,
@@ -1179,6 +1199,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           return;
         }
         const target = owner === 'player' ? enemies[0] : pickLowestLeftAttack(enemies);
+        // 自動確定時は対象と値をログに残してから適用
+        logResult(`${target.type} に ${eff.l}/${eff.r} を適用`);
         performSpecialAttack([target], eff.l, eff.r, matchIdAtStart, processNext);
         return;
       }
@@ -1187,20 +1209,39 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         const targets = gameState.cards.filter(
           (c) => c.zone === 'field' && !c.ui.pendingRemoval && c.id !== card.id,
         );
-        if (targets.length === 0) { processNext(); return; }
+        if (targets.length === 0) {
+          // 対象ゼロ時は不発理由を記録
+          logResult('対象なし（自身以外の場カードなし）');
+          processNext();
+          return;
+        }
+        // 対象数と値を成功ログとして記録
+        logResult(`${targets.length}体に ${eff.l}/${eff.r} を適用`);
         performSpecialAttack(targets, eff.l, eff.r, matchIdAtStart, processNext);
         return;
       }
       case 'adjAll': {
         // 両隣のカード（オーナー問わず）に eff.l / eff.r のダメージ
         const slotIdx = card.fieldSlotIndex;
-        if (slotIdx === null) { processNext(); return; }
+        if (slotIdx === null) {
+          // フィールド不在時は不発
+          logResult('対象なし（場にいないため不発）');
+          processNext();
+          return;
+        }
         const targets = [];
         [-1, 1].forEach((d) => {
           const c = getCardAtSlot(slotIdx + d);
           if (c) targets.push(c);
         });
-        if (targets.length === 0) { processNext(); return; }
+        if (targets.length === 0) {
+          // 両隣に誰もいないケースを明示
+          logResult('対象なし（両隣不在）');
+          processNext();
+          return;
+        }
+        // 成功時は対象数と値を記録
+        logResult(`${targets.length}体に ${eff.l}/${eff.r} を適用`);
         performSpecialAttack(targets, eff.l, eff.r, matchIdAtStart, processNext);
         return;
       }
@@ -1215,6 +1256,11 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           useMana(owner, eff.cost, color);
           // inner を次の位置に差し込んで処理
           effects.splice(idx, 0, eff.inner);
+          // manaGate の成功時は支払いと inner 実行確定を明示
+          logResult(`${eff.cost}マナ支払い → inner効果適用`);
+        } else {
+          // manaGate の失敗時は inner 未実行であることを明示
+          logResult(`${eff.cost}マナ不足のため不発`);
         }
         processNext();
         return;
@@ -1229,9 +1275,13 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         triggerHpPulse(targetOwner, 560);
         addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
         if (gameState.hp[targetOwner] <= 0) {
+          // 勝敗決定前に与えたダメージ量を残す
+          logResult(`${targetOwner === 'enemy' ? '相手' : 'あなた'}に ${eff.amount} ダメージ（HP ${gameState.hp[targetOwner]}）`);
           finishGame(owner);
           return;
         }
+        // 生存時も確定HPまで含めて記録
+        logResult(`${targetOwner === 'enemy' ? '相手' : 'あなた'}に ${eff.amount} ダメージ（HP ${gameState.hp[targetOwner]}）`);
         processNext();
         return;
       }
@@ -1242,6 +1292,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         addDamageText(card.x, card.y - 60, `+${eff.l}/+${eff.r}`, '#88ffaa');
         applyBoardEffects();
         checkStateBased();
+        // 自己強化の結果値を明示
+        logResult(`自身を +${eff.l}/+${eff.r} 強化`);
         processNext();
         return;
       }
@@ -1256,6 +1308,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           }
           reflowHand(owner);
           applyHandCardPreviews();
+          // 手札全交換の結果枚数を記録
+          logResult(`手札を全入れ替え（${eff.draw}枚ドロー）`);
           processNext();
         }, DESTROY_ANIMATION_MS + 30);
         return;
@@ -1269,6 +1323,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           recomputeSlotOccupancy();
           applyBoardEffects();
           checkStateBased();
+          // X=0 は自壊として不発ではなく結果ログを残す
+          logResult(`X=0 のため自壊`);
           gameState.interactionLock = false;
           return;
         }
@@ -1286,6 +1342,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         addDamageText(card.x, card.y - 60, `X=${colorMana}`, '#ffcc44');
         applyBoardEffects();
         checkStateBased();
+        // X値に基づく最終値を記録
+        logResult(`X=${colorMana} で LA/RA=${colorMana}/${colorMana}, DA=${da}`);
         processNext();
         return;
       }
@@ -1296,6 +1354,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         }
         reflowHand(owner);
         applyHandCardPreviews();
+        // ドロー枚数の確定結果を記録
+        logResult(`${eff.count}枚ドロー`);
         processNext();
         return;
       }
@@ -1308,6 +1368,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         if (owner === 'player') {
           // プレイヤー: 選択オーバーレイを表示して待機
           gameState.cycleSelection = { owner: 'player', processNext, matchId: matchIdAtStart };
+          // 選択待ちに入った事実を結果ログとして記録
+          logResult('1枚ドロー後、返却カード選択待ち');
           // interactionLock は選択完了後に processNext で引き継ぐ
           return;
         }
@@ -1323,6 +1385,11 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           });
           returnCardToDeckBottom(returnCard, owner);
           reflowHand(owner);
+          // AI は返却カードを確定できるため対象名を記録
+          logResult(`1枚ドロー後、${returnCard.type} をデッキ下へ返却`);
+        } else {
+          // 返却対象が不在の時も不発理由を明示
+          logResult('手札なしのため返却不発');
         }
         processNext();
         return;
@@ -1341,6 +1408,12 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           drawSpecificCardToHand(owner, entry.typeId);
           reflowHand(owner);
           applyHandCardPreviews();
+          // 成功時は加えたカード名を記録
+          const recruited = getCardType(entry.typeId);
+          logResult(`${recruited?.type ?? '不明カード'} を手札に加えた`);
+        } else {
+          // 指定種族が見つからない場合は不発理由を記録
+          logResult(`対象なし（${eff.tribe}不在）`);
         }
         processNext();
         return;
@@ -1363,6 +1436,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         const label = `DA${eff.value}${eff.boostL ? ` +${eff.boostL}/${eff.boostR}` : ''}`;
         addDamageText(card.x, card.y - 60, label, '#ffcc44');
         applyBoardEffects();
+        // DA変更と加算値を確定ログで残す
+        logResult(`DAを${card.combat.directAttack}に設定${eff.boostL ? `、+${eff.boostL}/${eff.boostR}` : ''}`);
         processNext();
         return;
       }
@@ -1375,6 +1450,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         effects.splice(idx, effects.length - idx);
         addDamageText(card.x, card.y - 60, '効果解除', '#88ddff');
         checkStateBased();
+        // 解除時は以降の効果未実行で打ち切ることを記録
+        logResult('自身のテキスト効果を解除（残り効果は未実行）');
         gameState.interactionLock = false;
         return;
       }
@@ -1385,6 +1462,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         }
         applyBoardEffects();
         checkStateBased();
+        // 有効化したアーラ名を明示
+        logResult(`${eff.aura} を有効化`);
         processNext();
         return;
       }
@@ -1392,7 +1471,12 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         // 手札からn枚を選んで捨てる（プレイヤーは選択式、AIは先頭n枚を自動廃棄）
         const handCards = getHandCards(owner);
         const count = Math.min(eff.count, handCards.length);
-        if (count === 0) { processNext(); return; }
+        if (count === 0) {
+          // 破棄対象ゼロ時の不発理由
+          logResult('手札なしのため不発');
+          processNext();
+          return;
+        }
 
         if (owner !== 'player') {
           // 敵AI: 先頭n枚を廃棄（ランク昇順で選ぶ）
@@ -1402,6 +1486,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           setTimeout(() => {
             if (gameState.matchId !== matchIdAtStart) return;
             reflowHand(owner);
+            // AI廃棄の確定枚数を記録
+            logResult(`${count}枚を廃棄`);
             processNext();
           }, DESTROY_ANIMATION_MS + 30);
           return;
@@ -1415,6 +1501,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           matchId: matchIdAtStart,
           selectedIds: [],
         };
+        // プレイヤー選択式の待機状態を記録
+        logResult(`${count}枚の廃棄対象を選択待ち`);
         return;
       }
       case 'bounty': {
@@ -1438,6 +1526,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           }
         }
         addDamageText(card.x, card.y - 60, `豊穣${toMill}`, '#ccffaa');
+        // 実際に退場へ送れた枚数を確定ログとして記録
+        logResult(`豊穣で ${toMill} 枚を退場に送った`);
         processNext();
         return;
       }
@@ -1450,6 +1540,11 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         if (sameCount >= eff.count) {
           // 条件達成: inner 効果を次の位置に差し込む
           effects.splice(idx, 0, eff.inner);
+          // 連帯成功時は枚数条件と inner 実行確定を記録
+          logResult(`連帯成立（${sameCount}/${eff.count}）→ inner効果適用`);
+        } else {
+          // 条件未達は不発理由を記録
+          logResult(`連帯不成立（${sameCount}/${eff.count}）`);
         }
         processNext();
         return;
@@ -1463,6 +1558,8 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
         addDamageText(card.x, card.y - 60, `全体+${eff.l}/+${eff.r}`, '#88ffaa');
         applyBoardEffects();
         checkStateBased();
+        // 強化対象数と値を記録
+        logResult(`味方${getFieldCards(owner).length}体を +${eff.l}/+${eff.r} 強化`);
         processNext();
         return;
       }
@@ -1478,14 +1575,23 @@ function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = n
           const hpPos = getHpBadgePosition(targetOwner);
           addDamageText(hpPos.x, hpPos.y + 56, `HP ${gameState.hp[targetOwner]}`, '#ffe6a7');
           if (gameState.hp[targetOwner] <= 0) {
+            // 勝敗決定前に実ダメージを記録
+            logResult(`${eff.tribe}枚数${n}により${targetOwner === 'enemy' ? '相手' : 'あなた'}へ ${n} ダメージ（HP ${gameState.hp[targetOwner]}）`);
             finishGame(owner);
             return;
           }
+          // 生存時も実ダメージを記録
+          logResult(`${eff.tribe}枚数${n}により${targetOwner === 'enemy' ? '相手' : 'あなた'}へ ${n} ダメージ（HP ${gameState.hp[targetOwner]}）`);
+        } else {
+          // 枚数ゼロ時は不発を明示
+          logResult(`対象なし（${eff.tribe}が0体）`);
         }
         processNext();
         return;
       }
       default:
+        // 未知効果は識別子を残してスキップ
+        logResult('未対応効果のため未実行');
         processNext();
         return;
     }
@@ -1541,27 +1647,27 @@ function pickLowestLeftAttack(candidates) {
 }
 
 function getEffectLogText(eff) {
-  // 戦闘ログ向けに効果テキストを簡易整形する
+  // 効果ラベル用途専用: 実際の戦闘ログ本文は各 case の結果ベース文面で組み立てる
   if (!eff || !eff.type) return '不明な効果';
   switch (eff.type) {
-    case 'adjEnemy': return `隣接敵1体に ${eff.l}/${eff.r}`;
-    case 'anyEnemy': return `敵1体に ${eff.l}/${eff.r}`;
-    case 'aoeExSelf': return `自身以外全体に ${eff.l}/${eff.r}`;
-    case 'adjAll': return `両隣に ${eff.l}/${eff.r}`;
-    case 'manaGate': return `マナ${eff.cost}支払いで追加効果`;
-    case 'playerDamage': return `相手プレイヤーに${eff.amount}ダメージ`;
-    case 'boostSelf': return `自身を +${eff.l}/+${eff.r}`;
-    case 'draw': return `${eff.count}枚ドロー`;
-    case 'cycle': return '1枚引いて1枚戻す';
-    case 'recruit': return `${eff.tribe}をリクルート`;
-    case 'upgradeDa': return `DAを${eff.value}に強化`;
-    case 'nullifySelf': return '自身テキスト効果を解除';
-    case 'enableAura': return `${eff.aura}を有効化`;
-    case 'handDiscard': return `手札を${eff.count}枚廃棄`;
-    case 'bounty': return `豊穣${eff.count}`;
-    case 'solidarity': return `連帯${eff.count}判定`;
-    case 'boostAllOwn': return `味方全体を +${eff.l}/+${eff.r}`;
-    case 'tribeCountDamage': return `${eff.tribe}枚数分ダメージ`;
+    case 'adjEnemy': return '隣接敵1体';
+    case 'anyEnemy': return '敵1体';
+    case 'aoeExSelf': return '自身以外全体';
+    case 'adjAll': return '両隣';
+    case 'manaGate': return 'マナゲート';
+    case 'playerDamage': return 'プレイヤーダメージ';
+    case 'boostSelf': return '自己強化';
+    case 'draw': return 'ドロー';
+    case 'cycle': return '循環';
+    case 'recruit': return 'リクルート';
+    case 'upgradeDa': return 'DA強化';
+    case 'nullifySelf': return '自己効果解除';
+    case 'enableAura': return 'アーラ有効化';
+    case 'handDiscard': return '手札廃棄';
+    case 'bounty': return '豊穣';
+    case 'solidarity': return '連帯';
+    case 'boostAllOwn': return '味方全体強化';
+    case 'tribeCountDamage': return '種族枚数ダメージ';
     default: return eff.type;
   }
 }
@@ -1584,7 +1690,8 @@ export function confirmEffectTargetChoice(targetId) {
     sel.processNext();
     return;
   }
-  addBattleLogEntry(sel.owner, `${source.type} の対象選択: ${target.type}`);
+  // 対象選択ログは「選択結果」を主語に統一する
+  addBattleLogEntry(sel.owner, `${source.type} [${sel.effectLabel}] 選択結果: ${target.type} を指定`);
   performSpecialAttack([target], payload.l, payload.r, sel.matchId, sel.processNext);
 }
 
