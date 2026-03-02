@@ -12,14 +12,14 @@ import {
   markCardDestroyed, addBattleLogEntry, clearBattleLog,
 } from './state.js';
 import {
-  drawRandomCardToHand, buildInitialCards,
+  animateDrawToHand, buildInitialCards,
   isPlayerMainTurn, canOwnerAct, finishGame,
   applyBoardEffects, checkStateBased,
 } from './cards.js';
 import { executeEnemyMainAction, aiShouldDiscardHand } from './ai.js';
 import { shuffleDeck, buildSampleDeck } from './deck.js';
 
-export function applyDrawPhase(owner) {
+export async function applyDrawPhase(owner, matchIdAtStart = gameState.matchId) {
   const handCountAtStart = getHandCards(owner).length;
   const isOpeningTurnOfFirstPlayer = gameState.turn.number === 1 && owner === gameState.turn.firstPlayer;
   const drawTarget = handCountAtStart >= MIN_HAND_AFTER_DRAW
@@ -37,9 +37,12 @@ export function applyDrawPhase(owner) {
     }
   }
 
+  // ドロー演出は1枚ずつ待機して、ログ・表示の時系列を揃える
   while (getHandCards(owner).length < drawTarget) {
     const countBefore = getHandCards(owner).length;
-    drawRandomCardToHand(owner);
+    await animateDrawToHand(owner, { shouldLog: true, reason: '通常ドロー' });
+    // 対戦リセット時は途中結果を反映しない
+    if (gameState.matchId !== matchIdAtStart) return;
     if (getHandCards(owner).length === countBefore) break; // デッキ切れ（安全弁）
   }
 
@@ -65,39 +68,57 @@ export function clearActedFlags(owner) {
   });
 }
 
-export function beginMainPhase(owner) {
+export function beginTurnHeader(owner) {
+  // ターン開始ログとバナー表示は、ドロー演出より先に出して時系列を自然化する
+  addBattleLogEntry('system', `TURN ${gameState.turn.number} / ${owner === 'player' ? 'PLAYER' : 'ENEMY'}`);
+
+  if (owner === 'player') {
+    showBanner(`PLAYER TURN ${gameState.turn.number}`);
+  } else {
+    showBanner(`ENEMY TURN ${gameState.turn.number}`);
+  }
+}
+
+export function beginMainPhaseCore(owner) {
+  // メイン行動開始はドロー後に実行し、デッキアウト時は到達しないよう責務を分離する
   const nowMs = performance.now();
   gameState.turn.phase = 'main';
   gameState.turn.mainPhaseStartedAtMs = nowMs;
   clearActedFlags(owner);
 
-  addBattleLogEntry('system', `TURN ${gameState.turn.number} / ${owner === 'player' ? 'PLAYER' : 'ENEMY'}`);
-
   if (owner === 'player') {
     gameState.turn.enemyAutoEndAtMs = 0;
     gameState.turn.enemyNextActionAtMs = 0;
-    showBanner(`PLAYER TURN ${gameState.turn.number}`);
   } else {
     gameState.turn.enemyAutoEndAtMs = 0;
     // PvPモード時はAIアクションをスケジュールしない
     gameState.turn.enemyNextActionAtMs = gameState.debugPvP ? 0 : nowMs + ENEMY_ACTION_DELAY_MS;
-    showBanner(`ENEMY TURN ${gameState.turn.number}`);
   }
 }
 
-export function beginTurn(owner, isNewRound = false) {
+export async function beginTurn(owner, isNewRound = false) {
   gameState.turn.currentPlayer = owner;
   gameState.turn.phase = 'draw';
-  gameState.interactionLock = false;
+  // ドローフェーズ中は演出完了まで操作をロックする
+  gameState.interactionLock = true;
   gameState.activePointer = null;
 
   if (isNewRound) {
     gameState.turn.number += 1;
   }
 
-  applyDrawPhase(owner);
+  const matchIdAtStart = gameState.matchId;
+  await applyDrawPhase(owner, matchIdAtStart);
+  if (gameState.matchId !== matchIdAtStart) return;
   if (gameState.result.winner) return; // デッキアウト敗北
   beginMainPhase(owner);
+  // メインフェーズ開始時点でのみロックを解除する
+  gameState.interactionLock = false;
+  // 表示を先に確定させることで、TURN表示→ドローの順序を保証する
+  beginTurnHeader(owner);
+  applyDrawPhase(owner);
+  if (gameState.result.winner) return; // デッキアウト敗北
+  beginMainPhaseCore(owner);
 }
 
 // ===== 全破棄 =====
@@ -120,7 +141,7 @@ function proceedEndTurn() {
       return;
     }
     gameState.interactionLock = false;
-    beginTurn(next, isNewRound);
+    void beginTurn(next, isNewRound);
   }, 220);
 }
 
@@ -282,7 +303,7 @@ export function updateTurnFlow(nowMs) {
     if (!gameState.turn.coin.active && gameState.turn.coin.firstShownDone) {
       if (nowMs >= gameState.turn.coin.firstShownAtMs + FIRST_PLAYER_BANNER_MS + FIRST_PLAYER_READY_DELAY_MS) {
         gameState.interactionLock = false;
-        beginTurn(gameState.turn.firstPlayer, false);
+        void beginTurn(gameState.turn.firstPlayer, false);
       }
       return;
     }
