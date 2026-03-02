@@ -379,8 +379,19 @@ export function cancelSummonSelection() {
   gameState.interactionLock = false;
 }
 
+// 召喚完了時の共通後処理（AIディレイ設定を lock 解放直前に実行）
+function finalizeSummonResolution(onSummonResolved = null) {
+  // 召喚解決完了の通知は interactionLock の解放直前に統一する
+  if (typeof onSummonResolved === 'function') {
+    onSummonResolved();
+  }
+  gameState.interactionLock = false;
+}
+
 // 召喚実行の共通処理（オーバーレイ経由・直接経由どちらからも呼ぶ）
-export function performSummon(card, targetSlot, tributeIds) {
+export function performSummon(card, targetSlot, tributeIds, options = {}) {
+  // AI側が召喚完了時刻を制御できるよう、完了フックを受け取る
+  const { onSummonResolved = null } = options;
   const matchIdAtStart = gameState.matchId;
   const actorLabel = card.owner === 'player' ? 'あなた' : '相手';
   // 召喚処理の起点を明示し、以降の効果ログと紐付けやすくする
@@ -404,7 +415,7 @@ export function performSummon(card, targetSlot, tributeIds) {
     if (card.effect === 'swap') {
       performSwapEffect(card);
       checkStateBased();
-      gameState.interactionLock = false;
+      finalizeSummonResolution(onSummonResolved);
       return;
     }
     // offering効果: プレイヤー召喚時のみ選択UI
@@ -425,13 +436,13 @@ export function performSummon(card, targetSlot, tributeIds) {
 
     // effects 配列による新効果ディスパッチ
     if (card.effects && card.effects.length > 0) {
-      dispatchSummonEffects(card, card.owner, matchIdAtStart);
+      dispatchSummonEffects(card, card.owner, matchIdAtStart, onSummonResolved);
       return; // interactionLock 解除は dispatcher 内で行う
     }
 
     // 効果なし: 状況起因処理を呼んでロック解除
     checkStateBased();
-    gameState.interactionLock = false;
+    finalizeSummonResolution(onSummonResolved);
   });
 }
 
@@ -501,7 +512,9 @@ export function getOverrideSummonSlots(owner) {
 }
 
 // 上書き召喚実行: 相手のRANK1を破棄してその場所に自分のカードを置く（生贄コストなし）
-export function performOverrideSummon(card, targetSlot) {
+export function performOverrideSummon(card, targetSlot, options = {}) {
+  // AI側が召喚完了時刻を制御できるよう、完了フックを受け取る
+  const { onSummonResolved = null } = options;
   const nowMs = performance.now();
   const matchIdAtStart = gameState.matchId;
   gameState.interactionLock = true;
@@ -534,7 +547,7 @@ export function performOverrideSummon(card, targetSlot) {
       if (card.effect === 'swap') {
         performSwapEffect(card);
         checkStateBased();
-        gameState.interactionLock = false;
+        finalizeSummonResolution(onSummonResolved);
         return;
       }
       if (card.effect === 'offering' && card.owner === 'player') {
@@ -551,12 +564,12 @@ export function performOverrideSummon(card, targetSlot) {
       }
 
       if (card.effects && card.effects.length > 0) {
-        dispatchSummonEffects(card, card.owner, matchIdAtStart);
+        dispatchSummonEffects(card, card.owner, matchIdAtStart, onSummonResolved);
         return;
       }
 
       checkStateBased();
-      gameState.interactionLock = false;
+      finalizeSummonResolution(onSummonResolved);
     });
   }, DESTROY_ANIMATION_MS);
 }
@@ -1087,18 +1100,18 @@ export function checkStateBased() {
 
 // ===== 召喚時効果ディスパッチャ =====
 
-function dispatchSummonEffects(card, owner, matchIdAtStart) {
+function dispatchSummonEffects(card, owner, matchIdAtStart, onSummonResolved = null) {
   // effectsNullified: 効果テキストが無効化されている場合はスキップ
   if (card.ui.effectsNullified) {
     checkStateBased();
-    gameState.interactionLock = false;
+    finalizeSummonResolution(onSummonResolved);
     return;
   }
 
   const effects = card.effects ? [...card.effects] : [];
   if (effects.length === 0) {
     checkStateBased();
-    gameState.interactionLock = false;
+    finalizeSummonResolution(onSummonResolved);
     return;
   }
 
@@ -1110,7 +1123,7 @@ function dispatchSummonEffects(card, owner, matchIdAtStart) {
     if (idx >= effects.length) {
       applyBoardEffects();
       checkStateBased();
-      gameState.interactionLock = false;
+      finalizeSummonResolution(onSummonResolved);
       return;
     }
     const eff = effects[idx];
