@@ -1,5 +1,9 @@
 // ===== 敵AI =====
-import { STARTING_HP, ENEMY_ACTION_DELAY_MS } from './constants.js';
+import {
+  STARTING_HP,
+  ENEMY_ACTION_DELAY_MS,
+  ENEMY_POST_SUMMON_DELAY_MS,
+} from './constants.js';
 import {
   gameState, slotCenters,
   getCardById, getCardAtSlot, getHandCards, getFieldCards,
@@ -181,11 +185,14 @@ export function executeEnemyMainAction(nowMs) {
   if (summon) {
     const { card, slotIndex, tributeIds, isOverride } = summon;
     const targetSlot = slotCenters[slotIndex];
+    // 召喚完了基準の次行動時刻を cards.js 側から一元設定するためのフック
+    const onSummonResolved = () => {
+      gameState.turn.enemyNextActionAtMs = performance.now() + ENEMY_POST_SUMMON_DELAY_MS;
+    };
 
     if (isOverride) {
       // 上書き召喚: performOverrideSummon に委譲
-      performOverrideSummon(card, targetSlot);
-      gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+      performOverrideSummon(card, targetSlot, { onSummonResolved });
       return true;
     }
 
@@ -195,9 +202,7 @@ export function executeEnemyMainAction(nowMs) {
     }
     gameState.interactionLock = true;
     // performSummon が tribute 適用・アニメ・召喚時効果発動・lock 解除をすべて担当
-    performSummon(card, targetSlot, tributeIds);
-
-    gameState.turn.enemyNextActionAtMs = nowMs + ENEMY_ACTION_DELAY_MS;
+    performSummon(card, targetSlot, tributeIds, { onSummonResolved });
     return true;
   }
 

@@ -19,6 +19,8 @@ export const MAX_FIELD_SLOTS = 5;
 export const TURN_BANNER_MS = 900;
 export const ENEMY_AUTO_END_MS = 850;
 export const ENEMY_ACTION_DELAY_MS = 540;
+// 敵AIの召喚解決後に必ず挟む待機時間（攻撃系遅延とは独立）
+export const ENEMY_POST_SUMMON_DELAY_MS = 350;
 export const COIN_TOSS_MS = 500;
 export const COIN_RESULT_WOBBLE_MS = 500;
 export const FIRST_PLAYER_BANNER_MS = 2000;
