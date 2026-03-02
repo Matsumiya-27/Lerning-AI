@@ -68,23 +68,31 @@ export function clearActedFlags(owner) {
   });
 }
 
-export function beginMainPhase(owner) {
+export function beginTurnHeader(owner) {
+  // ターン開始ログとバナー表示は、ドロー演出より先に出して時系列を自然化する
+  addBattleLogEntry('system', `TURN ${gameState.turn.number} / ${owner === 'player' ? 'PLAYER' : 'ENEMY'}`);
+
+  if (owner === 'player') {
+    showBanner(`PLAYER TURN ${gameState.turn.number}`);
+  } else {
+    showBanner(`ENEMY TURN ${gameState.turn.number}`);
+  }
+}
+
+export function beginMainPhaseCore(owner) {
+  // メイン行動開始はドロー後に実行し、デッキアウト時は到達しないよう責務を分離する
   const nowMs = performance.now();
   gameState.turn.phase = 'main';
   gameState.turn.mainPhaseStartedAtMs = nowMs;
   clearActedFlags(owner);
 
-  addBattleLogEntry('system', `TURN ${gameState.turn.number} / ${owner === 'player' ? 'PLAYER' : 'ENEMY'}`);
-
   if (owner === 'player') {
     gameState.turn.enemyAutoEndAtMs = 0;
     gameState.turn.enemyNextActionAtMs = 0;
-    showBanner(`PLAYER TURN ${gameState.turn.number}`);
   } else {
     gameState.turn.enemyAutoEndAtMs = 0;
     // PvPモード時はAIアクションをスケジュールしない
     gameState.turn.enemyNextActionAtMs = gameState.debugPvP ? 0 : nowMs + ENEMY_ACTION_DELAY_MS;
-    showBanner(`ENEMY TURN ${gameState.turn.number}`);
   }
 }
 
@@ -106,6 +114,11 @@ export async function beginTurn(owner, isNewRound = false) {
   beginMainPhase(owner);
   // メインフェーズ開始時点でのみロックを解除する
   gameState.interactionLock = false;
+  // 表示を先に確定させることで、TURN表示→ドローの順序を保証する
+  beginTurnHeader(owner);
+  applyDrawPhase(owner);
+  if (gameState.result.winner) return; // デッキアウト敗北
+  beginMainPhaseCore(owner);
 }
 
 // ===== 全破棄 =====
